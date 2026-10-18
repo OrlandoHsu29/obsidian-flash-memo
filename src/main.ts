@@ -290,12 +290,6 @@ export default class FlashMemo extends Plugin {
     this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
     const onPin = () => this.togglePin();
     this.pinButton.addEventListener('click', onPin);
-    const hideButton = bar.createEl('button', {cls: 'clickable-icon'});
-    setIcon(hideButton, 'minus');
-    const label = this.t('隐藏（Esc）', 'Hide (Esc)');
-    hideButton.setAttribute('aria-label', label);
-    const onHide = () => { void this.hide('escape'); };
-    hideButton.addEventListener('click', onHide);
     doc.body.append(bar);
     this.updatePin();
     const onBlur = () => {
@@ -333,7 +327,6 @@ export default class FlashMemo extends Plugin {
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
       this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
-      hideButton.removeEventListener('click', onHide);
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
   }
