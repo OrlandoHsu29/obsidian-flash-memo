@@ -284,7 +284,7 @@ export default class FlashMemo extends Plugin {
     this.archiveButton = bar.createEl('button', {cls:'clickable-icon flash-memo-archive'});
     setIcon(this.archiveButton, 'archive');
     const archiveLabel = this.t('归档并新建画板', 'Archive and create canvas');
-    this.archiveButton.title = archiveLabel; this.archiveButton.setAttribute('aria-label',archiveLabel);
+    this.archiveButton.setAttribute('aria-label',archiveLabel);
     const onArchive = () => this.confirmArchive();
     this.archiveButton.addEventListener('click',onArchive);
     this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
@@ -293,7 +293,7 @@ export default class FlashMemo extends Plugin {
     const hideButton = bar.createEl('button', {cls: 'clickable-icon'});
     setIcon(hideButton, 'minus');
     const label = this.t('隐藏（Esc）', 'Hide (Esc)');
-    hideButton.setAttribute('aria-label', label); hideButton.title = label;
+    hideButton.setAttribute('aria-label', label);
     const onHide = () => { void this.hide('escape'); };
     hideButton.addEventListener('click', onHide);
     doc.body.append(bar);
@@ -422,7 +422,7 @@ export default class FlashMemo extends Plugin {
     if (!button) return;
     setIcon(button, this.settings.pinned ? 'pin-off' : 'pin');
     const label = this.settings.pinned ? this.t('取消固定', 'Unpin') : this.t('固定到屏幕', 'Pin to screen');
-    button.setAttribute('aria-label', label); button.title = label;
+    button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(this.settings.pinned));
     button.classList.toggle('is-active', this.settings.pinned);
   }
