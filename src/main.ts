@@ -1,6 +1,6 @@
 import {
   App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile,
-  WorkspaceLeaf, WorkspaceWindow, normalizePath, setIcon,
+  WorkspaceLeaf, WorkspaceWindow, setIcon,
 } from 'obsidian';
 // Desktop timers keep initialization and cleanup responsive when the main
 // renderer is background-throttled.
@@ -8,6 +8,8 @@ import { setTimeout, clearTimeout } from 'node:timers';
 import { join } from 'node:path';
 import { GlobalHotkey, HotkeyStatus } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
+import { ArchiveConfirm } from './archive-confirm';
+import { archiveDrawing, availableDrawingPath, drawingFolder, ensureDrawingFolder } from './drawing-files';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -68,6 +70,9 @@ export default class FlashMemo extends Plugin {
   private settingTab: MemoSettingTab | null = null;
   private recorder: HotkeyRecorder | null = null;
   private recording = false;
+  private archiving = false;
+  private archiveDialog: ArchiveConfirm | null = null;
+  private archiveButton: HTMLButtonElement | null = null;
   private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
 
   t(zh: string, en: string): string {
@@ -101,7 +106,7 @@ export default class FlashMemo extends Plugin {
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
       if (oldPath !== this.settings.file) return;
       this.settings.file = file.path;
-      void this.saveData(this.settings);
+      if (!this.archiving) void this.saveData(this.settings);
     }));
     this.registerEvent(this.app.workspace.on('window-close', win => {
       if (win !== this.popout) return;
@@ -195,19 +200,10 @@ export default class FlashMemo extends Plugin {
     const plugin = this.drawingPlugin();
     const existing = this.settings.file && this.app.vault.getFileByPath(this.settings.file);
     if (existing) return existing;
-    const folder = normalizePath(this.settings.folder.trim() || DEFAULTS.folder);
-    if (folder.startsWith('/') || folder.split('/').some(part => part === '..' || part.includes(':'))) {
-      throw Error(this.t('画板文件夹必须是笔记库内的相对路径。', 'The canvas folder must be a relative path within the vault.'));
-    }
+    const folder = await ensureDrawingFolder(this.app, this.settings.folder);
     const content = await plugin.getBlankDrawing();
-    const parts = folder.split('/');
-    for (let i = 1; i <= parts.length; i++) {
-      const parent = parts.slice(0, i).join('/');
-      if (!this.app.vault.getAbstractFileByPath(parent)) await this.app.vault.createFolder(parent);
-    }
     const extension = plugin.settings?.compatibilityMode ? '.excalidraw' : '.excalidraw.md';
-    let path = `${folder}/Quick sketch${extension}`;
-    for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) path = `${folder}/Quick sketch ${n}${extension}`;
+    const path = availableDrawingPath(this.app, folder, 'Quick sketch', extension);
     const file = await this.app.vault.create(path, content);
     this.settings.file = file.path;
     await this.saveData(this.settings);
@@ -215,7 +211,7 @@ export default class FlashMemo extends Plugin {
   }
 
   async toggle() {
-    if (this.disposed || this.opening) return;
+    if (this.disposed || this.opening || this.archiving) return;
     if (this.alive()) {
       if (this.hidden || this.hiding) this.show();
       else await this.hide('escape');
@@ -285,6 +281,12 @@ export default class FlashMemo extends Plugin {
     bar.className = 'flash-memo-bar';
     const title = bar.createSpan({text: this.t('速记画板', 'Quick canvas'), cls: 'flash-memo-title'});
     title.setAttribute('aria-hidden', 'true');
+    this.archiveButton = bar.createEl('button', {cls:'clickable-icon flash-memo-archive'});
+    setIcon(this.archiveButton, 'archive');
+    const archiveLabel = this.t('归档并新建画板', 'Archive and create canvas');
+    this.archiveButton.title = archiveLabel; this.archiveButton.setAttribute('aria-label',archiveLabel);
+    const onArchive = () => this.confirmArchive();
+    this.archiveButton.addEventListener('click',onArchive);
     this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
     const onPin = () => this.togglePin();
     this.pinButton.addEventListener('click', onPin);
@@ -330,6 +332,7 @@ export default class FlashMemo extends Plugin {
       native!.off('resize', onBounds); native!.off('moved', onBounds);
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
+      this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
       hideButton.removeEventListener('click', onHide);
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
@@ -345,7 +348,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async hide(reason: 'blur' | 'escape') {
-    if (!this.alive() || this.hidden || (reason === 'blur' && this.settings.pinned)) return;
+    if (!this.alive() || this.hidden || this.archiving || (reason === 'blur' && this.settings.pinned)) return;
     const generation = ++this.hideGeneration;
     this.hiding = true;
     try {
@@ -359,6 +362,50 @@ export default class FlashMemo extends Plugin {
       this.restoreThrottling();
     } catch (error) { this.report(error); }
     finally { if (generation === this.hideGeneration) this.hiding = false; }
+  }
+
+  private confirmArchive() {
+    if (!this.alive() || this.disposed || this.archiving || this.archiveDialog) return;
+    try {
+      const folder = drawingFolder(this.settings.folder);
+      if (!folder) throw Error('invalid-folder');
+      this.archiveDialog = new ArchiveConfirm(this.app,(zh,en)=>this.t(zh,en),folder,
+        ()=>this.archiveCurrentDrawing(),()=>{this.archiveDialog=null;});
+      this.archiveDialog.open();
+    } catch(error) { this.report(error); }
+  }
+
+  private async archiveCurrentDrawing() {
+    if (!this.alive() || this.disposed || this.archiving) return;
+    const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
+    if (!current || !view.forceSave) { this.report(Error(this.t('当前画板暂时无法保存，请稍后重试。','The current canvas cannot be saved yet. Try again shortly.'))); return; }
+    this.archiving = true; this.archiveButton!.disabled = true;
+    this.hideGeneration++; this.hiding = false; this.clearBlur(); this.keepRendererAwake();
+    let result: Awaited<ReturnType<typeof archiveDrawing>> | undefined;
+    try {
+      await view.forceSave();
+      if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
+      const plugin = this.drawingPlugin();
+      const blank = await plugin.getBlankDrawing();
+      if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
+      result = await archiveDrawing(this.app,current,this.settings.folder,blank,new Date(),plugin.settings?.compatibilityMode?'.excalidraw':'.excalidraw.md');
+      this.settings.file = result.fresh.path;
+      await this.saveData(this.settings);
+      if (!this.disposed && this.alive() && this.leaf === leaf) {
+        await leaf.setViewState({type:'excalidraw',state:{file:result.fresh.path},active:true});
+        this.show();
+      }
+      if (!this.disposed) this.settingTab?.display();
+    } catch(error) {
+      // Keep the saved original reachable even when a later step fails.
+      this.settings.file = result?.archived.path ?? current.path;
+      try { await this.saveData(this.settings); } catch { /* Original files are never deleted. */ }
+      this.report(error);
+    } finally {
+      this.archiving = false;
+      if (this.archiveButton) this.archiveButton.disabled = false;
+      if (this.alive() && !this.settings.pinned && !this.native!.isFocused()) void this.hide('blur');
+    }
   }
 
   private togglePin() {
@@ -405,13 +452,16 @@ export default class FlashMemo extends Plugin {
     this.leaf = null; this.popout = null; this.native = null; this.hidden = false;
   }
   private report(error: unknown) {
-    new Notice(`Flash Memo: ${error instanceof Error ? error.message : String(error)}`);
+    const code = error instanceof Error ? error.message : String(error);
+    const message = code==='invalid-folder' ? this.t('请填写相对于知识库根目录的文件夹路径。','Enter a folder path relative to the vault root.') : code==='folder-is-file' ? this.t('指定路径已存在同名文件，请更换文件夹路径。','A file already exists at the folder path. Choose another folder.') : code;
+    new Notice(`Flash Memo: ${message}`);
     console.error('Flash Memo', error);
   }
 
   onunload() {
     this.disposed = true;
     this.recorder?.close();
+    this.archiveDialog?.close();
     this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
     if (this.alive()) { this.native!.show(); this.native!.setAlwaysOnTop(false); }
@@ -443,8 +493,8 @@ class MemoSettingTab extends PluginSettingTab {
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();
     new Setting(containerEl)
-      .setName(p.t('画板保存文件夹', 'Canvas folder'))
-      .setDesc(p.t('首次创建画板时使用；已有画板不会移动。', 'Used when creating a canvas. Existing canvases are not moved.'))
+      .setName(p.t('画板创建路径', 'Canvas creation folder'))
+      .setDesc(p.t('相对于知识库根目录，例如 画板/速记。新画板和归档画板均保存在此路径。', 'Relative to the vault root, for example Drawings/Quick notes. New and archived canvases are saved here.'))
       .addText(text => text.setValue(p.settings.folder).onChange(async value => {
         p.settings.folder = value; await p.saveData(p.settings);
       }));
