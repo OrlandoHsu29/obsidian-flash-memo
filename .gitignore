@@ -3,3 +3,4 @@ main.js
 dist/
 releases/
 *.tsbuildinfo
+native/build/

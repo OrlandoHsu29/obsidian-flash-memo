@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "build": "node esbuild.config.mjs",
+    "build:native": "node scripts/build-native.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "npm run build:native && node --test tests/global-hotkey.test.cjs",
     "package": "node scripts/package.mjs"
   },
   "devDependencies": {

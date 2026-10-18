@@ -1,10 +1,12 @@
 import {
-  App, Notice, Plugin, PluginSettingTab, Setting, TFile,
+  App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile,
   WorkspaceLeaf, WorkspaceWindow, normalizePath, setIcon,
 } from 'obsidian';
 // Desktop timers keep initialization and cleanup responsive when the main
 // renderer is background-throttled.
 import { setTimeout, clearTimeout } from 'node:timers';
+import { join } from 'node:path';
+import { GlobalHotkey, HotkeyStatus, parseHotkey } from './global-hotkey';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -19,6 +21,7 @@ interface DesktopWindow {
   setBounds(value: Bounds): void;
   on(event: string, listener: () => void): void;
   off(event: string, listener: () => void): void;
+  getNativeWindowHandle?(): Buffer;
   webContents?: {
     getBackgroundThrottling(): boolean;
     setBackgroundThrottling(value: boolean): void;
@@ -39,8 +42,10 @@ interface MemoSettings {
   leafId: string;
   pinned: boolean;
   bounds: Bounds | null;
+  globalHotkeyEnabled: boolean;
+  globalHotkey: string;
 }
-const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, bounds: null };
+const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
 
 export default class FlashMemo extends Plugin {
   settings: MemoSettings = { ...DEFAULTS };
@@ -58,6 +63,10 @@ export default class FlashMemo extends Plugin {
   private pinButton: HTMLButtonElement | null = null;
   private wakeContents: DesktopWindow['webContents'] | null = null;
   private previousThrottling: boolean | null = null;
+  private lastTrigger = 0;
+  private settingTab: MemoSettingTab | null = null;
+  private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
+
   t(zh: string, en: string): string {
     return (window.localStorage.getItem('language') ?? navigator.language).toLowerCase().startsWith('zh') ? zh : en;
   }
@@ -67,7 +76,7 @@ export default class FlashMemo extends Plugin {
     this.addCommand({
       id: 'toggle', name: this.t('显示/隐藏速记画板', 'Show/hide quick canvas'),
       hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'y' }],
-      callback: () => void this.toggle().catch(error => this.report(error)),
+      callback: () => this.triggerToggle(),
     });
     this.addCommand({
       id: 'pin', name: this.t('固定/取消固定速记窗口', 'Pin/unpin quick canvas'),
@@ -78,13 +87,14 @@ export default class FlashMemo extends Plugin {
       },
     });
     this.addRibbonIcon('pencil-ruler', this.t('速记画板', 'Quick canvas'), () => {
-      void this.toggle().catch(error => this.report(error));
+      this.triggerToggle();
     });
     this.registerObsidianProtocolHandler('flash-memo', params => {
       if (params.vault && params.vault !== this.app.vault.getName()) return;
-      void this.toggle().catch(error => this.report(error));
+      this.triggerToggle();
     });
-    this.addSettingTab(new MemoSettingTab(this.app, this));
+    this.settingTab = new MemoSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
       if (oldPath !== this.settings.file) return;
       this.settings.file = file.path;
@@ -98,6 +108,9 @@ export default class FlashMemo extends Plugin {
     }));
     this.app.workspace.onLayoutReady(() => {
       if (this.disposed) return;
+      void this.configureGlobalHotkey().then(success => {
+        if (!success && this.settings.globalHotkeyEnabled && !this.disposed) new Notice(this.hotkeyDescription());
+      }).catch(error => this.report(error));
       if (!this.settings.leafId) return;
       let restored: WorkspaceLeaf | null = null;
       this.app.workspace.iterateAllLeaves(leaf => {
@@ -107,6 +120,38 @@ export default class FlashMemo extends Plugin {
         if (!this.settings.pinned) return this.hide('escape');
       }).catch(error => this.report(error));
     });
+  }
+
+  private triggerToggle() {
+    // One physical keypress can reach both a global registration and a local
+    // Obsidian binding if the user assigns them the same combination.
+    const now = Date.now();
+    if (this.disposed || now - this.lastTrigger < 250) return;
+    this.lastTrigger = now;
+    void this.toggle().catch(error => this.report(error));
+  }
+
+  async configureGlobalHotkey(): Promise<boolean> {
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir || this.disposed) return false;
+    const handle = (window as Window & { electronWindow?: DesktopWindow }).electronWindow?.getNativeWindowHandle?.();
+    const owner = handle && handle.length >= 8 ? handle.readBigUInt64LE().toString() : '0';
+    const executable = join(adapter.getBasePath(), this.manifest.dir, 'flash-memo-hotkey.exe');
+    return this.globalHotkey.configure(this.settings.globalHotkeyEnabled, this.settings.globalHotkey, executable, owner);
+  }
+
+  hotkeyDescription(): string {
+    const messages: Record<HotkeyStatus, [string,string]> = {
+      off: ['已关闭；仅使用 Obsidian 内快捷键。','Disabled; the in-app shortcut remains available.'],
+      starting: ['正在注册全局快捷键…','Registering global shortcut…'],
+      ready: [`已启用 ${this.settings.globalHotkey}，在其他软件或 Obsidian 最小化时也可呼出。`,`Active: ${this.settings.globalHotkey}. Works from other apps and while Obsidian is minimized.`],
+      conflict: ['快捷键已被其他程序或笔记库占用，请更换组合。','Shortcut is already registered by another application or vault. Choose a different combination.'],
+      invalid: ['快捷键格式无效，例如 Ctrl+Alt+Y；不支持单独按键、仅 Shift 修饰或 F12。','Invalid shortcut. Example: Ctrl+Alt+Y. Bare keys, Shift-only combinations and F12 are not supported.'],
+      missing: ['缺少快捷键辅助程序，请重新安装完整安装包。','Hotkey helper is missing. Reinstall the complete plugin package.'],
+      failed: ['无法注册全局快捷键；可重新开关或更换组合。','Global shortcut could not be registered. Toggle it off/on or choose another combination.'],
+      unsupported: ['内置全局快捷键目前仅支持 Windows x64。','Built-in global shortcuts currently require Windows x64.'],
+    };
+    return this.t(...messages[this.globalHotkey.status]);
   }
 
   private drawingPlugin(): DrawingPlugin {
@@ -336,6 +381,7 @@ export default class FlashMemo extends Plugin {
 
   onunload() {
     this.disposed = true;
+    this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
     if (this.alive()) { this.native!.show(); this.native!.setAlwaysOnTop(false); }
     this.reset();
@@ -343,10 +389,25 @@ export default class FlashMemo extends Plugin {
 }
 
 class MemoSettingTab extends PluginSettingTab {
+  private statusEl: HTMLElement | null = null;
   constructor(app: App, private plugin: FlashMemo) { super(app, plugin); }
+  updateStatus() { if (this.statusEl?.isConnected) this.statusEl.setText(this.plugin.hotkeyDescription()); }
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
+    const supported = process.platform === 'win32' && process.arch === 'x64';
+    new Setting(containerEl).setName(p.t('系统全局快捷键','System-wide shortcut'))
+      .addToggle(toggle=>toggle.setValue(p.settings.globalHotkeyEnabled).setDisabled(!supported).onChange(async value=>{
+        p.settings.globalHotkeyEnabled=value;await p.saveData(p.settings);await p.configureGlobalHotkey();
+      }));
+    let shortcut=p.settings.globalHotkey;
+    new Setting(containerEl).setName(p.t('全局按键组合','Global key combination'))
+      .addText(text=>text.setValue(shortcut).setDisabled(!supported).onChange(value=>{shortcut=value;}))
+      .addButton(button=>button.setButtonText(p.t('应用','Apply')).setDisabled(!supported).onClick(async()=>{
+        try{shortcut=parseHotkey(shortcut).label;}catch{new Notice(p.t('请输入有效组合，例如 Ctrl+Alt+Y。','Enter a valid combination, such as Ctrl+Alt+Y.'));return;}
+        p.settings.globalHotkey=shortcut;await p.saveData(p.settings);await p.configureGlobalHotkey();this.display();
+      }));
+    this.statusEl=containerEl.createDiv({cls:'setting-item-description'});this.updateStatus();
     new Setting(containerEl)
       .setName(p.t('画板保存文件夹', 'Canvas folder'))
       .setDesc(p.t('首次创建画板时使用；已有画板不会移动。', 'Used when creating a canvas. Existing canvases are not moved.'))
@@ -358,6 +419,6 @@ class MemoSettingTab extends PluginSettingTab {
       .setDesc(p.settings.file || p.t('首次呼出时自动创建。', 'Created automatically on first use.'));
     new Setting(containerEl)
       .setName(p.t('快捷键', 'Keyboard shortcut'))
-      .setDesc(p.t('默认 Ctrl/Cmd + Shift + Y；可在 Obsidian 快捷键设置中修改。', 'Default: Ctrl/Cmd + Shift + Y. Change it in Obsidian hotkey settings.'));
+      .setDesc(p.t('Obsidian 内默认 Ctrl/Cmd + Shift + Y；可在快捷键设置中修改，与上方全局组合独立。', 'In-app default: Ctrl/Cmd + Shift + Y. Change it in Obsidian hotkey settings; it is separate from the global shortcut above.'));
   }
 }
