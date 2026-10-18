@@ -5,18 +5,27 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
-let GlobalHotkey,parseHotkey;
+let GlobalHotkey,parseHotkey,hotkeyFromEvent;
 const output=path.resolve('.test-build/global-hotkey.cjs');
 const helper=path.resolve('native/build/flash-memo-hotkey.exe');
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await wait(20);}assert.fail('Timed out waiting for helper state');}
-before(async()=>{await build({entryPoints:['src/global-hotkey.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({GlobalHotkey,parseHotkey}=require(output));});
+before(async()=>{await build({entryPoints:['src/global-hotkey.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({GlobalHotkey,parseHotkey,hotkeyFromEvent}=require(output));});
 after(async()=>{await fs.unlink(output);await fs.rmdir(path.dirname(output));});
 
 test('parses combinations, normalizes names, and rejects unsafe/ambiguous input',()=>{
  assert.deepEqual(parseHotkey(' shift + control + f9 '),{label:'Ctrl+Shift+F9',modifiers:6,key:120});
  assert.equal(parseHotkey('Ctrl+Alt+Y').key,89);
  for(const invalid of ['Y','Shift+Y','Ctrl+Ctrl+Y','Ctrl+F12','Ctrl++Y','Ctrl+F25','Ctrl+Control'])assert.throws(()=>parseHotkey(invalid));
+});
+
+test('records physical key combinations independently of keyboard language and ignores modifier-only presses',()=>{
+ const event={code:'KeyY',key:'任意输入法字符',ctrlKey:true,altKey:true,shiftKey:false,metaKey:false,isComposing:false};
+ assert.equal(hotkeyFromEvent(event).label,'Ctrl+Alt+Y');
+ assert.equal(hotkeyFromEvent({...event,code:'ShiftLeft',key:'Shift'}),null);
+ assert.equal(hotkeyFromEvent({...event,code:'ArrowLeft',key:'ArrowLeft'}).label,'Ctrl+Alt+Left');
+ assert.throws(()=>hotkeyFromEvent({...event,isComposing:true}));
+ assert.throws(()=>hotkeyFromEvent({...event,code:'F12',key:'F12'}));
 });
 
 test('registration conflicts, rebinding, races, and dispose release only owned registrations',async()=>{

@@ -27,6 +27,14 @@ export function parseHotkey(value: string): Hotkey {
   return { label:[...labels.filter(([flag]) => modifiers & flag).map(([,name]) => name),keyName.length === 1 || /^F\d+$/.test(keyName) ? keyName : keyName[0]+keyName.slice(1).toLowerCase()].join('+'), modifiers, key };
 }
 
+export function hotkeyFromEvent(event: Pick<KeyboardEvent, 'code'|'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'|'isComposing'>): Hotkey | null {
+  if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(event.code) || ['Control','Alt','Shift','Meta'].includes(event.key)) return null;
+  if (event.isComposing) throw Error('invalid');
+  const names: Record<string,string> = {ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down',Space:'Space'};
+  const key = /^(Key[A-Z]|Digit[0-9])$/.test(event.code) ? event.code.replace(/^(Key|Digit)/,'') : names[event.code] ?? event.code;
+  return parseHotkey([...event.ctrlKey?['Ctrl']:[],...event.altKey?['Alt']:[],...event.shiftKey?['Shift']:[],...event.metaKey?['Win']:[],key].join('+'));
+}
+
 export type HotkeyStatus = 'off' | 'starting' | 'ready' | 'conflict' | 'invalid' | 'missing' | 'failed' | 'unsupported';
 
 export class GlobalHotkey {

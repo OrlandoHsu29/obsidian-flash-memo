@@ -6,7 +6,8 @@ import {
 // renderer is background-throttled.
 import { setTimeout, clearTimeout } from 'node:timers';
 import { join } from 'node:path';
-import { GlobalHotkey, HotkeyStatus, parseHotkey } from './global-hotkey';
+import { GlobalHotkey, HotkeyStatus } from './global-hotkey';
+import { HotkeyRecorder } from './hotkey-recorder';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -65,6 +66,8 @@ export default class FlashMemo extends Plugin {
   private previousThrottling: boolean | null = null;
   private lastTrigger = 0;
   private settingTab: MemoSettingTab | null = null;
+  private recorder: HotkeyRecorder | null = null;
+  private recording = false;
   private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
 
   t(zh: string, en: string): string {
@@ -131,14 +134,41 @@ export default class FlashMemo extends Plugin {
     void this.toggle().catch(error => this.report(error));
   }
 
-  async configureGlobalHotkey(): Promise<boolean> {
+  async configureGlobalHotkey(candidate?: string): Promise<boolean> {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir || this.disposed) return false;
     const handle = (window as Window & { electronWindow?: DesktopWindow }).electronWindow?.getNativeWindowHandle?.();
     const owner = handle && handle.length >= 8 ? handle.readBigUInt64LE().toString() : '0';
     const executable = join(adapter.getBasePath(), this.manifest.dir, 'flash-memo-hotkey.exe');
-    return this.globalHotkey.configure(this.settings.globalHotkeyEnabled, this.settings.globalHotkey, executable, owner);
+    return this.globalHotkey.configure(this.settings.globalHotkeyEnabled && (!this.recording || candidate !== undefined), candidate ?? this.settings.globalHotkey, executable, owner);
   }
+
+  recordGlobalHotkey() {
+    if (this.recorder || this.disposed) return;
+    this.recording = true;
+    const modal = new HotkeyRecorder(this.app, (zh,en)=>this.t(zh,en), async()=>{ await this.configureGlobalHotkey(); }, async candidate=>{
+      const success = await this.configureGlobalHotkey(candidate);
+      if (this.recorder !== modal || this.disposed) return false;
+      if (!success) throw Error(this.hotkeyDescription());
+      this.settings.globalHotkey = candidate;
+      this.recording = false;
+      await this.saveData(this.settings);
+      return true;
+    }, ()=>{
+      this.recorder = null;
+      const resume = this.recording;
+      this.recording = false;
+      if (resume && !this.disposed) void this.configureGlobalHotkey().catch(error=>this.report(error));
+      if (!this.disposed) this.settingTab?.display();
+    });
+    this.recorder = modal; modal.open();
+  }
+
+  hotkeyProblem(): string {
+    return ['conflict','invalid','missing','failed','unsupported'].includes(this.globalHotkey.status) ? this.hotkeyDescription() : '';
+  }
+
+  cancelHotkeyRecording() { this.recorder?.close(); }
 
   hotkeyDescription(): string {
     const messages: Record<HotkeyStatus, [string,string]> = {
@@ -381,6 +411,7 @@ export default class FlashMemo extends Plugin {
 
   onunload() {
     this.disposed = true;
+    this.recorder?.close();
     this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
     if (this.alive()) { this.native!.show(); this.native!.setAlwaysOnTop(false); }
@@ -391,23 +422,26 @@ export default class FlashMemo extends Plugin {
 class MemoSettingTab extends PluginSettingTab {
   private statusEl: HTMLElement | null = null;
   constructor(app: App, private plugin: FlashMemo) { super(app, plugin); }
-  updateStatus() { if (this.statusEl?.isConnected) this.statusEl.setText(this.plugin.hotkeyDescription()); }
+  hide() { this.plugin.cancelHotkeyRecording(); super.hide(); }
+  updateStatus() { if (this.statusEl?.isConnected) this.statusEl.setText(this.plugin.hotkeyProblem() || this.plugin.t('点击录制，直接按下新的组合键。', 'Click Record and press a new key combination.')); }
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
     const supported = process.platform === 'win32' && process.arch === 'x64';
-    new Setting(containerEl).setName(p.t('系统全局快捷键','System-wide shortcut'))
-      .addToggle(toggle=>toggle.setValue(p.settings.globalHotkeyEnabled).setDisabled(!supported).onChange(async value=>{
-        p.settings.globalHotkeyEnabled=value;await p.saveData(p.settings);await p.configureGlobalHotkey();
+    new Setting(containerEl)
+      .setName(p.t('系统全局快捷键', 'System-wide shortcut'))
+      .setDesc(p.t('Obsidian 在后台或最小化时也可呼出。仅 Windows x64；停用插件时自动释放。', 'Open the canvas while Obsidian is in the background or minimized. Windows x64 only; released when the plugin is disabled.'))
+      .addToggle(toggle => toggle.setValue(p.settings.globalHotkeyEnabled).setDisabled(!supported).onChange(async value => {
+        p.settings.globalHotkeyEnabled = value;
+        await p.saveData(p.settings); await p.configureGlobalHotkey();
       }));
-    let shortcut=p.settings.globalHotkey;
-    new Setting(containerEl).setName(p.t('全局按键组合','Global key combination'))
-      .addText(text=>text.setValue(shortcut).setDisabled(!supported).onChange(value=>{shortcut=value;}))
-      .addButton(button=>button.setButtonText(p.t('应用','Apply')).setDisabled(!supported).onClick(async()=>{
-        try{shortcut=parseHotkey(shortcut).label;}catch{new Notice(p.t('请输入有效组合，例如 Ctrl+Alt+Y。','Enter a valid combination, such as Ctrl+Alt+Y.'));return;}
-        p.settings.globalHotkey=shortcut;await p.saveData(p.settings);await p.configureGlobalHotkey();this.display();
-      }));
-    this.statusEl=containerEl.createDiv({cls:'setting-item-description'});this.updateStatus();
+    const shortcutSetting = new Setting(containerEl)
+      .setName(p.t('全局按键组合', 'Global key combination'))
+      .setDesc('');
+    shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'flash-memo-shortcut'});
+    shortcutSetting.addButton(button=>button.setButtonText(p.t('录制','Record')).setDisabled(!supported).onClick(()=>p.recordGlobalHotkey()));
+    this.statusEl = shortcutSetting.descEl;
+    this.updateStatus();
     new Setting(containerEl)
       .setName(p.t('画板保存文件夹', 'Canvas folder'))
       .setDesc(p.t('首次创建画板时使用；已有画板不会移动。', 'Used when creating a canvas. Existing canvases are not moved.'))
