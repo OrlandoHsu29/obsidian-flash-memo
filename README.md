@@ -1,0 +1,44 @@
+# Flash Memo
+
+A small floating Excalidraw canvas for quick sketches in Obsidian. Independent of Blo Editor; drawings remain ordinary Excalidraw files in your vault.
+
+- **Ctrl/Cmd + Shift + Y**: show/hide the canvas. Change this in Obsidian → Hotkeys → Flash Memo.
+- **Ctrl + Alt + Y (Windows)**: system-wide shortcut, configurable in Flash Memo settings.
+- **Esc**: hide the window. Close drawing menus or finish text editing first.
+- **Click elsewhere**: automatically hide after a short delay.
+- **Pin**: keep the canvas visible and above other windows. Esc still hides it.
+- Drag the title bar to move the window. Resize normally; position and size are remembered.
+- **Archive button**: after confirmation, save and timestamp the current canvas, then switch the same window to a new blank canvas.
+
+Install and enable [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) first. Flash Memo creates `Flash Memo/Quick sketch.excalidraw.md` on first use and reopens that same canvas. Excalidraw handles editing and autosave; Flash Memo requests a save before hiding. Drawings can be embedded into any note with `![[...]]`, including Blo Editor notes. Disabling Flash Memo leaves drawings intact.
+
+Desktop only. Window control uses the desktop popout's internal `electronWindow` interface, so future Obsidian updates may require adaptation. No drawing engine is bundled, and Floating Notes is not a dependency.
+
+While the canvas is visible, the main renderer is kept awake so Excalidraw can save even when the main window is minimized. Its previous throttling setting is restored after hiding or disabling Flash Memo.
+
+The Canvas creation folder setting is relative to the vault root, for example `Drawings/Quick notes`. New and archived canvases are stored there. Archive names resemble `Sketch 2026-10-18 12-30-05.excalidraw.md`, with a number added on collisions. Archiving moves the original through Obsidian's file manager to maintain existing note links; save or creation failures never delete the old drawing.
+
+## System-wide shortcut (Windows)
+
+Windows x64 enables **Ctrl + Alt + Y** by default, including when another app has focus or Obsidian is minimized. Toggle it in Flash Memo settings, or click Record, press a new combination and save. Recording temporarily releases the existing binding; cancel with Esc, an outside click or a window switch to restore it. The global binding is independent of the in-app binding; assigning the same combination executes only one toggle per press.
+
+The bundled C helper `flash-memo-hotkey.exe` uses Windows `RegisterHotKey` messages without polling, keyboard hooks, or a script runtime. It runs only while global shortcuts are enabled. Disabling the feature or plugin, or exiting Obsidian, stops the helper and releases its binding. A binding already owned by another app or vault is reported in settings. AutoHotkey, PowerToys and Rust are not needed. Obsidian must remain running, with Excalidraw enabled for drawing.
+
+Other platforms can use an external launcher with `obsidian://flash-memo?vault=YOUR_PERCENT_ENCODED_VAULT_NAME`. Without a vault parameter, whichever vault receives the URI handles it.
+
+## Build
+
+Node.js 22 recommended, plus the Visual Studio Build Tools “Desktop development with C++” workload. On Windows:
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run package
+```
+
+Install the complete `dist/flash-memo/` folder, including the hotkey helper EXE, under the vault's `.obsidian/plugins/`. The ZIP is generated in `releases/` with a top-level `flash-memo/` folder. Preserve `data.json` when updating, and disable the global shortcut before replacing the helper.
+
+MIT © OrlandoHsu29. Excalidraw is a separate third-party plugin. The floating-window workflow was evaluated against [Floating Notes](https://github.com/haotiencheng/obsidian-floating-notes); this project implements its own controller for blur-to-hide and pinning.
+
+[中文说明](README.zh-CN.md)
