@@ -1,0 +1,19 @@
+{
+  "name": "flash-memo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A quick floating Excalidraw canvas for Obsidian.",
+  "author": "OrlandoHsu29",
+  "license": "MIT",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.2",
+    "esbuild": "^0.25.2",
+    "obsidian": "^1.10.0",
+    "typescript": "^5.9.3"
+  }
+}

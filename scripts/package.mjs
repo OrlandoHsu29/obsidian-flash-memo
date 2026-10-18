@@ -1,0 +1,16 @@
+import { execFileSync } from 'node:child_process';
+import { mkdir, copyFile, readFile } from 'node:fs/promises';
+import path from 'node:path';
+const root = process.cwd();
+const manifest = JSON.parse(await readFile('manifest.json','utf8'));
+const pkg = JSON.parse(await readFile('package.json','utf8'));
+if (manifest.version !== pkg.version) throw Error('Package and manifest versions differ');
+execFileSync(process.execPath, ['esbuild.config.mjs'], {stdio:'inherit'});
+const target = path.join(root, 'dist', 'flash-memo');
+await mkdir(target, {recursive:true});
+for (const file of ['main.js','manifest.json','styles.css','LICENSE']) await copyFile(file, path.join(target,file));
+await mkdir('releases', {recursive:true});
+const zip = path.join(root,'releases',`flash-memo-${manifest.version}.zip`);
+const quote = value => `'${value.replaceAll("'", "''")}'`;
+execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Compress-Archive -LiteralPath ${quote(target)} -DestinationPath ${quote(zip)} -Force`], {stdio:'inherit',windowsHide:true});
+console.log(zip);

@@ -1,0 +1,363 @@
+import {
+  App, Notice, Plugin, PluginSettingTab, Setting, TFile,
+  WorkspaceLeaf, WorkspaceWindow, normalizePath, setIcon,
+} from 'obsidian';
+// Desktop timers keep initialization and cleanup responsive when the main
+// renderer is background-throttled.
+import { setTimeout, clearTimeout } from 'node:timers';
+
+interface Bounds { x: number; y: number; width: number; height: number }
+// Obsidian exposes this on desktop popouts, but it is outside the public API.
+interface DesktopWindow {
+  isDestroyed(): boolean;
+  show(): void;
+  hide(): void;
+  focus(): void;
+  isFocused(): boolean;
+  setAlwaysOnTop(value: boolean): void;
+  getBounds(): Bounds;
+  setBounds(value: Bounds): void;
+  on(event: string, listener: () => void): void;
+  off(event: string, listener: () => void): void;
+  webContents?: {
+    getBackgroundThrottling(): boolean;
+    setBackgroundThrottling(value: boolean): void;
+  };
+}
+interface DrawingView {
+  file?: TFile;
+  forceSave?: () => Promise<unknown>;
+  excalidrawAPI?: { getAppState(): { editingTextElement?: unknown; openDialog?: unknown; openMenu?: unknown } };
+}
+interface DrawingPlugin {
+  getBlankDrawing(): Promise<string>;
+  settings?: { compatibilityMode?: boolean };
+}
+interface MemoSettings {
+  folder: string;
+  file: string;
+  leafId: string;
+  pinned: boolean;
+  bounds: Bounds | null;
+}
+const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, bounds: null };
+
+export default class FlashMemo extends Plugin {
+  settings: MemoSettings = { ...DEFAULTS };
+  private leaf: WorkspaceLeaf | null = null;
+  private popout: WorkspaceWindow | null = null;
+  private native: DesktopWindow | null = null;
+  private hidden = false;
+  private opening = false;
+  private disposed = false;
+  private hideGeneration = 0;
+  private hiding = false;
+  private blurTimer: ReturnType<typeof setTimeout> | null = null;
+  private boundsTimer: ReturnType<typeof setTimeout> | null = null;
+  private detach: (() => void) | null = null;
+  private pinButton: HTMLButtonElement | null = null;
+  private wakeContents: DesktopWindow['webContents'] | null = null;
+  private previousThrottling: boolean | null = null;
+  t(zh: string, en: string): string {
+    return (window.localStorage.getItem('language') ?? navigator.language).toLowerCase().startsWith('zh') ? zh : en;
+  }
+
+  async onload() {
+    this.settings = { ...DEFAULTS, ...await this.loadData() };
+    this.addCommand({
+      id: 'toggle', name: this.t('显示/隐藏速记画板', 'Show/hide quick canvas'),
+      hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'y' }],
+      callback: () => void this.toggle().catch(error => this.report(error)),
+    });
+    this.addCommand({
+      id: 'pin', name: this.t('固定/取消固定速记窗口', 'Pin/unpin quick canvas'),
+      checkCallback: checking => {
+        if (!this.alive() || this.hidden) return false;
+        if (!checking) this.togglePin();
+        return true;
+      },
+    });
+    this.addRibbonIcon('pencil-ruler', this.t('速记画板', 'Quick canvas'), () => {
+      void this.toggle().catch(error => this.report(error));
+    });
+    this.registerObsidianProtocolHandler('flash-memo', params => {
+      if (params.vault && params.vault !== this.app.vault.getName()) return;
+      void this.toggle().catch(error => this.report(error));
+    });
+    this.addSettingTab(new MemoSettingTab(this.app, this));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      if (oldPath !== this.settings.file) return;
+      this.settings.file = file.path;
+      void this.saveData(this.settings);
+    }));
+    this.registerEvent(this.app.workspace.on('window-close', win => {
+      if (win !== this.popout) return;
+      this.reset();
+      this.settings.leafId = '';
+      void this.saveData(this.settings);
+    }));
+    this.app.workspace.onLayoutReady(() => {
+      if (this.disposed) return;
+      if (!this.settings.leafId) return;
+      let restored: WorkspaceLeaf | null = null;
+      this.app.workspace.iterateAllLeaves(leaf => {
+        if ((leaf as WorkspaceLeaf & { id: string }).id === this.settings.leafId) restored = leaf;
+      });
+      if (restored) void this.attach(restored).then(() => {
+        if (!this.settings.pinned) return this.hide('escape');
+      }).catch(error => this.report(error));
+    });
+  }
+
+  private drawingPlugin(): DrawingPlugin {
+    const registry = (this.app as App & { plugins: { plugins: Record<string, unknown> } }).plugins.plugins;
+    const plugin = registry['obsidian-excalidraw-plugin'] as DrawingPlugin | undefined;
+    if (!plugin?.getBlankDrawing) throw Error(this.t('请先安装并启用 Excalidraw 插件。', 'Please install and enable the Excalidraw plugin first.'));
+    return plugin;
+  }
+
+  private async ensureDrawing(): Promise<TFile> {
+    const plugin = this.drawingPlugin();
+    const existing = this.settings.file && this.app.vault.getFileByPath(this.settings.file);
+    if (existing) return existing;
+    const folder = normalizePath(this.settings.folder.trim() || DEFAULTS.folder);
+    if (folder.startsWith('/') || folder.split('/').some(part => part === '..' || part.includes(':'))) {
+      throw Error(this.t('画板文件夹必须是笔记库内的相对路径。', 'The canvas folder must be a relative path within the vault.'));
+    }
+    const content = await plugin.getBlankDrawing();
+    const parts = folder.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const parent = parts.slice(0, i).join('/');
+      if (!this.app.vault.getAbstractFileByPath(parent)) await this.app.vault.createFolder(parent);
+    }
+    const extension = plugin.settings?.compatibilityMode ? '.excalidraw' : '.excalidraw.md';
+    let path = `${folder}/Quick sketch${extension}`;
+    for (let n = 2; this.app.vault.getAbstractFileByPath(path); n++) path = `${folder}/Quick sketch ${n}${extension}`;
+    const file = await this.app.vault.create(path, content);
+    this.settings.file = file.path;
+    await this.saveData(this.settings);
+    return file;
+  }
+
+  async toggle() {
+    if (this.disposed || this.opening) return;
+    if (this.alive()) {
+      if (this.hidden || this.hiding) this.show();
+      else await this.hide('escape');
+      return;
+    }
+    this.reset();
+    this.opening = true;
+    this.keepRendererAwake();
+    let created: WorkspaceLeaf | null = null;
+    try {
+      const file = await this.ensureDrawing();
+      if (this.disposed) return;
+      created = this.app.workspace.getLeaf('window');
+      await created.setViewState({ type: 'excalidraw', state: { file: file.path }, active: true });
+      await this.attach(created);
+      if (this.disposed) return;
+      this.settings.leafId = (created as WorkspaceLeaf & { id: string }).id;
+      await this.saveData(this.settings);
+      this.show();
+    } catch (error) {
+      this.reset();
+      created?.detach();
+      throw error;
+    } finally {
+      this.opening = false;
+      if (!this.alive()) this.restoreThrottling();
+    }
+  }
+
+  private alive(): boolean {
+    return !!this.leaf && !!this.native && !this.native.isDestroyed();
+  }
+
+  private async attach(leaf: WorkspaceLeaf) {
+    const container = leaf.getContainer();
+    if (!(container instanceof WorkspaceWindow)) throw Error('Flash Memo: a desktop popout window is required.');
+    // Creating a popout and initializing its renderer are asynchronous.
+    let native: DesktopWindow | undefined;
+    for (let i = 0; i < 60 && !this.disposed; i++) {
+      native = (container.win as Window & { electronWindow?: DesktopWindow }).electronWindow;
+      if (native) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (this.disposed) { leaf.detach(); return; }
+    if (!native || native.isDestroyed()) throw Error(this.t('无法初始化速记窗口。', 'Could not initialize the quick canvas window.'));
+    this.leaf = leaf;
+    this.popout = container;
+    this.native = native;
+    this.keepRendererAwake();
+    const doc = container.doc;
+    doc.body.classList.add('flash-memo-window');
+    native.setAlwaysOnTop(this.settings.pinned);
+    const bounds = this.settings.bounds;
+    if (bounds && Object.values(bounds).every(Number.isFinite)) {
+      const screen = container.win.screen;
+      // Bring a remembered window back onto the current monitor after a display change.
+      const width = Math.max(440, Math.min(bounds.width, screen.availWidth));
+      const height = Math.max(360, Math.min(bounds.height, screen.availHeight));
+      const area = screen as Screen & { availLeft?: number; availTop?: number };
+      const left = area.availLeft ?? 0, top = area.availTop ?? 0;
+      native.setBounds({width,height,x:Math.max(left,Math.min(bounds.x,left+screen.availWidth-width)),y:Math.max(top,Math.min(bounds.y,top+screen.availHeight-height))});
+    } else {
+      const current = native.getBounds();
+      native.setBounds({...current,width:760,height:600});
+    }
+    const bar = doc.createElement('div');
+    bar.className = 'flash-memo-bar';
+    const title = bar.createSpan({text: this.t('速记画板', 'Quick canvas'), cls: 'flash-memo-title'});
+    title.setAttribute('aria-hidden', 'true');
+    this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
+    const onPin = () => this.togglePin();
+    this.pinButton.addEventListener('click', onPin);
+    const hideButton = bar.createEl('button', {cls: 'clickable-icon'});
+    setIcon(hideButton, 'minus');
+    const label = this.t('隐藏（Esc）', 'Hide (Esc)');
+    hideButton.setAttribute('aria-label', label); hideButton.title = label;
+    const onHide = () => { void this.hide('escape'); };
+    hideButton.addEventListener('click', onHide);
+    doc.body.append(bar);
+    this.updatePin();
+    const onBlur = () => {
+      this.clearBlur();
+      if (this.settings.pinned || this.hidden) return;
+      this.blurTimer = setTimeout(() => {
+        this.blurTimer = null;
+        if (!native!.isDestroyed() && !native!.isFocused()) void this.hide('blur');
+      }, 180);
+    };
+    const onFocus = () => { this.clearBlur(); this.hideGeneration++; this.hiding = false; };
+    const onBounds = () => {
+      if (this.boundsTimer) clearTimeout(this.boundsTimer);
+      this.boundsTimer = setTimeout(() => {
+        this.boundsTimer = null;
+        if (!this.alive() || this.hidden) return;
+        this.settings.bounds = native!.getBounds();
+        void this.saveData(this.settings);
+      }, 300);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (doc.querySelector('.modal-container, .menu, .suggestion-container, .excalidraw .popover')) return;
+      const state = (this.leaf?.view as DrawingView | undefined)?.excalidrawAPI?.getAppState();
+      if (state?.editingTextElement || state?.openDialog || state?.openMenu) return;
+      event.preventDefault();
+      void this.hide('escape');
+    };
+    native.on('blur', onBlur); native.on('focus', onFocus);
+    native.on('resize', onBounds); native.on('moved', onBounds);
+    doc.addEventListener('keydown', onKey);
+    this.detach = () => {
+      native!.off('blur', onBlur); native!.off('focus', onFocus);
+      native!.off('resize', onBounds); native!.off('moved', onBounds);
+      doc.removeEventListener('keydown', onKey);
+      this.pinButton?.removeEventListener('click', onPin);
+      hideButton.removeEventListener('click', onHide);
+      bar.remove(); doc.body.classList.remove('flash-memo-window');
+    };
+  }
+
+  private show() {
+    if (!this.alive()) return;
+    this.hideGeneration++; this.hiding = false; this.clearBlur();
+    this.hidden = false;
+    this.keepRendererAwake();
+    this.native!.show();
+    this.native!.focus();
+  }
+
+  private async hide(reason: 'blur' | 'escape') {
+    if (!this.alive() || this.hidden || (reason === 'blur' && this.settings.pinned)) return;
+    const generation = ++this.hideGeneration;
+    this.hiding = true;
+    try {
+      const view = this.leaf!.view as DrawingView;
+      if (!view.forceSave) throw Error(this.t('当前 Excalidraw 版本不支持保存接口，请更新插件。', 'Please update Excalidraw: its save interface is unavailable.'));
+      await view.forceSave();
+      if (generation !== this.hideGeneration || !this.alive()) return;
+      if (reason === 'blur' && (this.settings.pinned || this.native!.isFocused())) return;
+      this.hidden = true;
+      this.native!.hide();
+      this.restoreThrottling();
+    } catch (error) { this.report(error); }
+    finally { if (generation === this.hideGeneration) this.hiding = false; }
+  }
+
+  private togglePin() {
+    if (!this.alive()) return;
+    this.hideGeneration++; this.hiding = false; this.clearBlur();
+    this.settings.pinned = !this.settings.pinned;
+    this.native!.setAlwaysOnTop(this.settings.pinned);
+    this.updatePin();
+    void this.saveData(this.settings);
+  }
+
+  private updatePin() {
+    const button = this.pinButton;
+    if (!button) return;
+    setIcon(button, this.settings.pinned ? 'pin-off' : 'pin');
+    const label = this.settings.pinned ? this.t('取消固定', 'Unpin') : this.t('固定到屏幕', 'Pin to screen');
+    button.setAttribute('aria-label', label); button.title = label;
+    button.setAttribute('aria-pressed', String(this.settings.pinned));
+    button.classList.toggle('is-active', this.settings.pinned);
+  }
+
+  private clearBlur() { if (this.blurTimer) clearTimeout(this.blurTimer); this.blurTimer = null; }
+  private keepRendererAwake() {
+    if (this.wakeContents) return;
+    const mainWindow = window as Window & { electronWindow?: DesktopWindow };
+    const contents = mainWindow?.electronWindow?.webContents;
+    if (!contents?.getBackgroundThrottling || !contents.setBackgroundThrottling) return;
+    this.previousThrottling = contents.getBackgroundThrottling();
+    this.wakeContents = contents;
+    // Excalidraw's save coordinator runs in the main renderer. Wake it only
+    // while this canvas is visible or awaiting its final save.
+    contents.setBackgroundThrottling(false);
+  }
+  private restoreThrottling() {
+    if (this.wakeContents && this.previousThrottling !== null) this.wakeContents.setBackgroundThrottling(this.previousThrottling);
+    this.wakeContents = null; this.previousThrottling = null;
+  }
+  private reset() {
+    this.hideGeneration++; this.hiding = false; this.clearBlur();
+    if (this.boundsTimer) clearTimeout(this.boundsTimer);
+    this.boundsTimer = null;
+    this.detach?.(); this.detach = null; this.pinButton = null;
+    this.restoreThrottling();
+    this.leaf = null; this.popout = null; this.native = null; this.hidden = false;
+  }
+  private report(error: unknown) {
+    new Notice(`Flash Memo: ${error instanceof Error ? error.message : String(error)}`);
+    console.error('Flash Memo', error);
+  }
+
+  onunload() {
+    this.disposed = true;
+    // Leave a usable normal Excalidraw window after disabling the controller.
+    if (this.alive()) { this.native!.show(); this.native!.setAlwaysOnTop(false); }
+    this.reset();
+  }
+}
+
+class MemoSettingTab extends PluginSettingTab {
+  constructor(app: App, private plugin: FlashMemo) { super(app, plugin); }
+  display() {
+    const {containerEl} = this, p = this.plugin;
+    containerEl.empty();
+    new Setting(containerEl)
+      .setName(p.t('画板保存文件夹', 'Canvas folder'))
+      .setDesc(p.t('首次创建画板时使用；已有画板不会移动。', 'Used when creating a canvas. Existing canvases are not moved.'))
+      .addText(text => text.setValue(p.settings.folder).onChange(async value => {
+        p.settings.folder = value; await p.saveData(p.settings);
+      }));
+    new Setting(containerEl)
+      .setName(p.t('当前画板', 'Current canvas'))
+      .setDesc(p.settings.file || p.t('首次呼出时自动创建。', 'Created automatically on first use.'));
+    new Setting(containerEl)
+      .setName(p.t('快捷键', 'Keyboard shortcut'))
+      .setDesc(p.t('默认 Ctrl/Cmd + Shift + Y；可在 Obsidian 快捷键设置中修改。', 'Default: Ctrl/Cmd + Shift + Y. Change it in Obsidian hotkey settings.'));
+  }
+}

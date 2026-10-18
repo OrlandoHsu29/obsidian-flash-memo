@@ -1,0 +1,9 @@
+{
+  "id": "flash-memo",
+  "name": "Flash Memo",
+  "version": "0.1.0",
+  "minAppVersion": "1.10.0",
+  "description": "Quick floating Excalidraw canvas with auto-hide and pinning.",
+  "author": "OrlandoHsu29",
+  "isDesktopOnly": true
+}
