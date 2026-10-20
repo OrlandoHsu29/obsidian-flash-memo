@@ -60,3 +60,5 @@ body.flash-memo-window .flash-memo-bar .flash-memo-title {
 .flash-memo-window .excalidraw .tray-misc-tools-container { right: 6px; }
 .flash-memo-key-preview { display: block; padding: 16px; margin: 12px 0; text-align: center; font-size: var(--font-ui-medium); }
 .flash-memo-shortcut { white-space: nowrap; }
+.flash-memo-error { max-width: 420px; }
+.flash-memo-error-details { max-height: 150px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }

@@ -3,8 +3,13 @@ const assert=require('node:assert/strict');
 const {buildSync}=require('esbuild');
 const Module=require('node:module');
 class Base {}
+class FakeModal {
+ constructor(){this.scope={register(){}};this.contentEl={empty(){}};this.opens=0;}
+ open(){this.opens++;}
+ close(){this.onClose?.();}
+}
 const loaded=new Module('flash-memo-test.cjs');
-loaded.require=id=>id==='obsidian'?{Plugin:Base,PluginSettingTab:Base,Modal:Base}:require(id);
+loaded.require=id=>id==='obsidian'?{Plugin:Base,PluginSettingTab:Base,Modal:FakeModal}:require(id);
 loaded._compile(buildSync({entryPoints:['src/main.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text,'flash-memo-test.cjs');
 const FlashMemo=loaded.exports.default;
 
@@ -15,6 +20,7 @@ function fixture(){
  const leaf={id:'test-leaf',view:{file:old},async setViewState(state){this.view={file:files.get(state.state.file)};},detach(){}};
  p.app={vault:{adapter:{exists:async path=>disk.has(path)},getFileByPath:path=>files.get(path),getAbstractFileByPath:path=>files.get(path),async create(path){creates++;const file={path};files.set(path,file);disk.add(path);return file;}},workspace:{getLeaf(){opens++;return leaf;}}};
  p.settings.file=old.path;p.leaf=leaf;p.native=native;p.hidden=true;
+ p.t=(_zh,en)=>en;
  p.drawingPlugin=()=>({getBlankDrawing:async()=> 'blank'});
  p.saveData=async()=>{};p.keepRendererAwake=()=>{};p.restoreThrottling=()=>{};p.updateName=()=>{};
  p.show=()=>{shows++;p.hidden=false;};p.hide=async()=>{hides++;p.hidden=true;};
@@ -133,4 +139,63 @@ test('deleting source during a switch keeps the window hidden without reporting 
  };
  await f.p.switchDrawing(target);
  assert.equal(f.p.hidden,true);assert.equal(reports,0);assert.equal(f.p.switching,false);assert.equal(f.p.settings.file,f.old.path);
+});
+test('canvas errors open one confirmation dialog and keep the window until confirmed',t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();f.p.report(Error('Save failed'),true);const dialog=f.p.errorDialog;
+ assert.ok(dialog);assert.equal(dialog.opens,1);assert.equal(f.p.leaf,f.leaf);
+ f.p.report(Error('Second failure'),true);assert.equal(f.p.errorDialog,dialog);assert.equal(dialog.opens,1);
+});
+test('confirming a canvas error closes without saving and keeps the drawing file',t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();let saves=0,destroys=0,detaches=0;
+ f.leaf.view.forceSave=async()=>{saves++;throw Error('Save remains broken');};
+ f.p.native.destroy=()=>{destroys++;};f.leaf.detach=()=>{detaches++;};
+ f.p.report(Error('Save failed'),true);f.p.errorDialog.finished(true);
+ assert.equal(saves,0);assert.equal(destroys,1);assert.equal(detaches,1);
+ assert.equal(f.p.leaf,null);assert.equal(f.p.native,null);assert.equal(f.p.settings.leafId,'');
+ assert.equal(f.p.settings.file,f.old.path);assert.equal(f.files.get(f.old.path),f.old);
+});
+test('dismissing an error dialog leaves the drawing available and allows another prompt',t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();f.p.report(Error('Save failed'),true);const dialog=f.p.errorDialog;
+ dialog.close();assert.equal(f.p.errorDialog,null);assert.equal(f.p.leaf,f.leaf);
+ f.p.report(Error('Retry failed'),true);assert.notEqual(f.p.errorDialog,dialog);
+});
+test('an open recovery dialog blocks further hide/save attempts',async t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();let saves=0;f.leaf.view.forceSave=async()=>{saves++;};
+ f.p.report(Error('Save failed'),true);
+ await FlashMemo.prototype.hide.call(f.p,'close');
+ assert.equal(saves,0);assert.equal(f.p.hidden,false);assert.ok(f.p.errorDialog);
+});
+test('recovery releases plugin state even if window and leaf cleanup throw',t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();f.p.native.destroy=()=>{throw Error('Destroy failed');};
+ f.leaf.detach=()=>{throw Error('Detach failed');};
+ f.p.closeFailedWindow();
+ assert.equal(f.p.leaf,null);assert.equal(f.p.native,null);assert.equal(f.p.errorClosing,false);assert.equal(f.p.settings.file,f.old.path);
+});
+test('reset removes the error dialog without confirming or destroying a window',t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();let destroys=0;f.p.native.destroy=()=>{destroys++;};
+ f.p.report(Error('Save failed'),true);f.p.reset();
+ assert.equal(f.p.errorDialog,null);assert.equal(destroys,0);
+});
+test('window action boundary catches synchronous and asynchronous UI failures',async t=>{
+ t.mock.method(console,'error',()=>{});
+ const f=fixture();f.p.runWindowAction(()=>{throw Error('Synchronous UI failure');});
+ assert.ok(f.p.errorDialog);f.p.errorDialog.close();
+ f.p.runWindowAction(async()=>{throw Error('Asynchronous UI failure');});
+ await new Promise(resolve=>setImmediate(resolve));assert.ok(f.p.errorDialog);
+});
+test('recovery releases the workspace leaf before native destruction for tray bookkeeping',()=>{
+ const f=fixture(),order=[];f.leaf.detach=()=>{order.push('leaf');};f.p.native.destroy=()=>{order.push('native');};
+ f.p.closeFailedWindow();assert.deepEqual(order,['leaf','native']);
+});
+test('duplicate hide requests share the pending save',async()=>{
+ const f=fixture();f.p.hidden=false;let finish,saves=0;
+ f.leaf.view.forceSave=()=>{saves++;return new Promise(resolve=>{finish=resolve;});};
+ const first=FlashMemo.prototype.hide.call(f.p,'close');while(!finish)await Promise.resolve();
+ await FlashMemo.prototype.hide.call(f.p,'close');assert.equal(saves,1);finish();await first;assert.equal(f.p.hidden,true);
 });
