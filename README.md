@@ -10,7 +10,7 @@
 
 ![Flash Memo as a small floating window over this project's GitHub page](docs/images/browser-preview.png)
 
-*An actual browser-window screenshot: Flash Memo stays above the project page as a compact, separate canvas.*
+*Author-supplied screenshot, with the background dimmed to highlight Flash Memo's compact floating canvas above the project page.*
 
 Open a canvas with one shortcut, sketch or write, and click elsewhere to save and hide it. The next time you open Flash Memo, your drawing is still there. Drawings stay as ordinary Excalidraw files in your vault, ready to open or embed in your notes.
 
