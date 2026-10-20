@@ -2,8 +2,7 @@
 
 A small floating Excalidraw canvas for quick sketches in Obsidian. Independent of Blo Editor; drawings remain ordinary Excalidraw files in your vault.
 
-- **Ctrl/Cmd + Shift + Y**: show/hide the canvas. Change this in Obsidian → Hotkeys → Flash Memo.
-- **Ctrl + Alt + Y (Windows)**: system-wide shortcut, configurable in Flash Memo settings.
+- **Ctrl + Alt + Y**: show/hide the canvas, configurable in Flash Memo settings. The Global shortcut switch controls whether it also works outside Obsidian (Windows x64).
 - **Esc**: hide the window. Close drawing menus or finish text editing first.
 - **Click elsewhere**: save and hide immediately, without an exit animation. Enabled by default; turn off **Hide on focus loss** in Flash Memo settings to keep the canvas visible.
 - **Pin**: keep the canvas visible and above other windows. Esc still hides it.
@@ -25,9 +24,9 @@ While the canvas is visible, the main renderer is kept awake so Excalidraw can s
 
 The Canvas creation folder setting is relative to the vault root, for example `Drawings/Quick notes`. New and archived canvases are stored there. Archive names resemble `Sketch 2026-10-18 12-30-05.excalidraw.md`, with a number added on collisions. Archiving moves the original through Obsidian's file manager to maintain existing note links; save or creation failures never delete the old drawing.
 
-## System-wide shortcut (Windows)
+## Keyboard shortcut
 
-Windows x64 enables **Ctrl + Alt + Y** by default to show or hide the canvas, including when another app has focus or Obsidian is minimized. Toggle it in Flash Memo settings, or click Change, press a new combination and save. Changing the shortcut temporarily releases the existing binding; cancel with Esc, an outside click or a window switch to restore it. The global binding is independent of the in-app binding; assigning the same combination executes only one toggle per press.
+The default shortcut is **Ctrl + Alt + Y**. Edit this one combination in Flash Memo settings with Change. With **Global shortcut** on (Windows x64), it also works from other apps or while Obsidian is minimized. With the switch off, the same combination works inside Obsidian only. Changing the shortcut temporarily releases the existing binding; cancel with Esc, an outside click or a window switch to restore it. The ribbon button, command palette and URI remain available.
 
 The bundled C helper `flash-memo-hotkey.exe` uses Windows `RegisterHotKey` messages without polling, keyboard hooks, or a script runtime. It runs only while global shortcuts are enabled. Disabling the feature or plugin, or exiting Obsidian, stops the helper and releases its binding. A binding already owned by another app or vault is reported in settings. AutoHotkey, PowerToys and Rust are not needed. Obsidian must remain running, with Excalidraw enabled for drawing.
 

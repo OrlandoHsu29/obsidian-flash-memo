@@ -1,12 +1,12 @@
 import {
   App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile,
-  WorkspaceLeaf, WorkspaceWindow, setIcon,
+  WorkspaceLeaf, WorkspaceWindow, setIcon, KeymapEventHandler,
 } from 'obsidian';
 // Desktop timers keep initialization and cleanup responsive when the main
 // renderer is background-throttled.
 import { setTimeout, clearTimeout } from 'node:timers';
 import { join } from 'node:path';
-import { GlobalHotkey, HotkeyStatus } from './global-hotkey';
+import { GlobalHotkey, HotkeyStatus, localHotkey } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
 import { ArchiveConfirm } from './archive-confirm';
 import { archiveDrawing, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
@@ -79,6 +79,7 @@ export default class FlashMemo extends Plugin {
   private settingTab: MemoSettingTab | null = null;
   private recorder: HotkeyRecorder | null = null;
   private recording = false;
+  private localHotkeyHandler: KeymapEventHandler | null = null;
   private archiving = false;
   private archiveDialog: ArchiveConfirm | null = null;
   private archiveButton: HTMLButtonElement | null = null;
@@ -103,7 +104,6 @@ export default class FlashMemo extends Plugin {
     this.settings = { ...DEFAULTS, ...await this.loadData() };
     this.addCommand({
       id: 'toggle', name: this.t('显示/隐藏速记画板', 'Show/hide quick canvas'),
-      hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'y' }],
       callback: () => this.triggerToggle(),
     });
     this.addCommand({
@@ -162,12 +162,30 @@ export default class FlashMemo extends Plugin {
   }
 
   async configureGlobalHotkey(candidate?: string): Promise<boolean> {
+    this.clearLocalHotkey();
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir || this.disposed) return false;
     const handle = (window as Window & { electronWindow?: DesktopWindow }).electronWindow?.getNativeWindowHandle?.();
     const owner = handle && handle.length >= 8 ? handle.readBigUInt64LE().toString() : '0';
     const executable = join(adapter.getBasePath(), this.manifest.dir, 'flash-memo-hotkey.exe');
-    return this.globalHotkey.configure(this.settings.globalHotkeyEnabled && (!this.recording || candidate !== undefined), candidate ?? this.settings.globalHotkey, executable, owner);
+    const success = await this.globalHotkey.configure(this.settings.globalHotkeyEnabled && (!this.recording || candidate !== undefined), candidate ?? this.settings.globalHotkey, executable, owner);
+    if (success) this.configureLocalHotkey();
+    return success;
+  }
+
+  private clearLocalHotkey() {
+    if (this.localHotkeyHandler) this.app.scope.unregister(this.localHotkeyHandler);
+    this.localHotkeyHandler = null;
+  }
+
+  private configureLocalHotkey() {
+    this.clearLocalHotkey();
+    if (this.settings.globalHotkeyEnabled || this.recording || this.disposed) return;
+    const hotkey = localHotkey(this.settings.globalHotkey);
+    this.localHotkeyHandler = this.app.scope.register(hotkey.modifiers, hotkey.key, event => {
+      if (!event.repeat) this.triggerToggle();
+      return false;
+    });
   }
 
   recordGlobalHotkey() {
@@ -177,9 +195,12 @@ export default class FlashMemo extends Plugin {
       const success = await this.configureGlobalHotkey(candidate);
       if (this.recorder !== modal || this.disposed) return false;
       if (!success) throw Error(this.hotkeyDescription());
+      const previous = this.settings.globalHotkey;
       this.settings.globalHotkey = candidate;
+      try { await this.saveData(this.settings); }
+      catch (error) { this.settings.globalHotkey = previous; await this.configureGlobalHotkey(); throw error; }
       this.recording = false;
-      await this.saveData(this.settings);
+      this.configureLocalHotkey();
       return true;
     }, ()=>{
       this.recorder = null;
@@ -199,7 +220,7 @@ export default class FlashMemo extends Plugin {
 
   hotkeyDescription(): string {
     const messages: Record<HotkeyStatus, [string,string]> = {
-      off: ['已关闭；仅使用 Obsidian 内快捷键。','Disabled; the in-app shortcut remains available.'],
+      off: ['仅在 Obsidian 内生效。','Available inside Obsidian only.'],
       starting: ['正在注册全局快捷键…','Registering global shortcut…'],
       ready: [`已启用 ${this.settings.globalHotkey}，在其他软件或 Obsidian 最小化时也可呼出。`,`Active: ${this.settings.globalHotkey}. Works from other apps and while Obsidian is minimized.`],
       conflict: ['快捷键已被其他程序或笔记库占用，请更换组合。','Shortcut is already registered by another application or vault. Choose a different combination.'],
@@ -743,6 +764,7 @@ export default class FlashMemo extends Plugin {
 
   onunload() {
     this.disposed = true;
+    this.clearLocalHotkey();
     this.recorder?.close();
     this.archiveDialog?.close();
     this.globalHotkey.dispose();
@@ -758,7 +780,7 @@ class MemoSettingTab extends PluginSettingTab {
   hide() { this.plugin.cancelHotkeyRecording(); super.hide(); }
   updateStatus() {
     if (!this.statusEl?.isConnected) return;
-    const description = this.plugin.t('在任意应用中显示或隐藏速记画板，Obsidian 在后台或最小化时也可使用。', 'Show or hide the quick canvas from any app, even when Obsidian is in the background or minimized.');
+    const description = this.plugin.t('显示或隐藏速记画板。开启上方“全局快捷键”后可在任意应用中使用，关闭后仅在 Obsidian 内生效。', 'Show or hide the quick canvas. Enable Global shortcut above to use it from any app; otherwise it works inside Obsidian only.');
     const problem = this.plugin.hotkeyProblem();
     this.statusEl.setText(problem ? `${description} ${problem}` : description);
   }
@@ -789,7 +811,6 @@ class MemoSettingTab extends PluginSettingTab {
       catch (error) { new Notice(p.t('无法启用 Tray，请在第三方插件设置中检查。', 'Could not enable Tray. Check community plugin settings.')); console.error('Flash Memo Tray', error); }
       finally { if (containerEl.isConnected) this.display(); }
     }));
-
     new Setting(containerEl)
       .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
       .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))
@@ -799,17 +820,17 @@ class MemoSettingTab extends PluginSettingTab {
       }));
     const supported = process.platform === 'win32' && process.arch === 'x64';
     new Setting(containerEl)
-      .setName(p.t('系统全局快捷键', 'System-wide shortcut'))
-      .setDesc(p.t('Obsidian 在后台或最小化时也可呼出。仅 Windows x64；停用插件时自动释放。', 'Open the canvas while Obsidian is in the background or minimized. Windows x64 only; released when the plugin is disabled.'))
+      .setName(p.t('全局快捷键', 'Global shortcut'))
+      .setDesc(p.t('开启后可在 Obsidian 后台或最小化时使用下方快捷键；关闭后仅在 Obsidian 内生效。全局模式仅支持 Windows x64。', 'Use the shortcut below while Obsidian is in the background or minimized. When off, it works inside Obsidian only. Global mode requires Windows x64.'))
       .addToggle(toggle => toggle.setValue(p.settings.globalHotkeyEnabled).setDisabled(!supported).onChange(async value => {
         p.settings.globalHotkeyEnabled = value;
         await p.saveData(p.settings); await p.configureGlobalHotkey();
       }));
     const shortcutSetting = new Setting(containerEl)
-      .setName(p.t('显示/隐藏画板的全局快捷键', 'Global shortcut to show/hide canvas'))
+      .setName(p.t('唤起窗口快捷键', 'Window activation shortcut'))
       .setDesc('');
     shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'flash-memo-shortcut'});
-    shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).setDisabled(!supported).onClick(()=>p.recordGlobalHotkey()));
+    shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).onClick(()=>p.recordGlobalHotkey()));
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();
     new Setting(containerEl)
@@ -821,8 +842,5 @@ class MemoSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName(p.t('当前画板', 'Current canvas'))
       .setDesc(p.settings.file || p.t('首次呼出时自动创建。', 'Created automatically on first use.'));
-    new Setting(containerEl)
-      .setName(p.t('快捷键', 'Keyboard shortcut'))
-      .setDesc(p.t('Obsidian 内默认 Ctrl/Cmd + Shift + Y；可在快捷键设置中修改，与上方全局组合独立。', 'In-app default: Ctrl/Cmd + Shift + Y. Change it in Obsidian hotkey settings; it is separate from the global shortcut above.'));
   }
 }

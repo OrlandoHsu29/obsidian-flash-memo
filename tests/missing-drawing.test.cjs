@@ -199,3 +199,15 @@ test('duplicate hide requests share the pending save',async()=>{
  const first=FlashMemo.prototype.hide.call(f.p,'close');while(!finish)await Promise.resolve();
  await FlashMemo.prototype.hide.call(f.p,'close');assert.equal(saves,1);finish();await first;assert.equal(f.p.hidden,true);
 });
+test('global-off mode registers one local shortcut and cleans it up for recording or global mode',()=>{
+ const f=fixture(),active=new Set();let triggers=0;
+ f.p.app.scope={register(modifiers,key,func){const handler={modifiers,key,func};active.add(handler);return handler;},unregister(handler){active.delete(handler);}};
+ f.p.triggerToggle=()=>{triggers++;};f.p.settings.globalHotkeyEnabled=false;f.p.settings.globalHotkey='Ctrl+Shift+Y';
+ f.p.configureLocalHotkey();assert.equal(active.size,1);
+ const handler=[...active][0];assert.equal(handler.key,'Y');handler.func({repeat:false});handler.func({repeat:true});assert.equal(triggers,1);
+ f.p.configureLocalHotkey();assert.equal(active.size,1);
+ f.p.recording=true;f.p.configureLocalHotkey();assert.equal(active.size,0);
+ f.p.recording=false;f.p.configureLocalHotkey();assert.equal(active.size,1);
+ f.p.settings.globalHotkeyEnabled=true;f.p.configureLocalHotkey();assert.equal(active.size,0);
+ f.p.settings.globalHotkeyEnabled=false;f.p.disposed=true;f.p.configureLocalHotkey();assert.equal(active.size,0);
+});

@@ -36,7 +36,7 @@ export class HotkeyRecorder extends Modal {
 
   async onOpen() {
     this.active = true;
-    this.setTitle(this.t('修改全局快捷键', 'Change global shortcut'));
+    this.setTitle(this.t('修改快捷键', 'Change shortcut'));
     this.contentEl.createEl('p', {text:this.t('直接按下组合键，然后保存。按 Esc 或点击其他位置取消。', 'Press a key combination, then save. Press Esc or click outside to cancel.')});
     this.preview = this.contentEl.createEl('kbd', {cls:'flash-memo-key-preview',text:this.t('准备中…', 'Preparing…')});
     this.hint = this.contentEl.createDiv({cls:'setting-item-description'});

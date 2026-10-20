@@ -5,18 +5,24 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
-let GlobalHotkey,parseHotkey,hotkeyFromEvent;
+let GlobalHotkey,parseHotkey,hotkeyFromEvent,localHotkey;
 const output=path.resolve('.test-build/global-hotkey.cjs');
 const helper=path.resolve('native/build/flash-memo-hotkey.exe');
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await wait(20);}assert.fail('Timed out waiting for helper state');}
-before(async()=>{await build({entryPoints:['src/global-hotkey.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({GlobalHotkey,parseHotkey,hotkeyFromEvent}=require(output));});
+before(async()=>{await build({entryPoints:['src/global-hotkey.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({GlobalHotkey,parseHotkey,hotkeyFromEvent,localHotkey}=require(output));});
 after(async()=>{await fs.unlink(output);await fs.rmdir(path.dirname(output));});
 
 test('parses combinations, normalizes names, and rejects unsafe/ambiguous input',()=>{
  assert.deepEqual(parseHotkey(' shift + control + f9 '),{label:'Ctrl+Shift+F9',modifiers:6,key:120});
  assert.equal(parseHotkey('Ctrl+Alt+Y').key,89);
  for(const invalid of ['Y','Shift+Y','Ctrl+Ctrl+Y','Ctrl+F12','Ctrl++Y','Ctrl+F25','Ctrl+Control'])assert.throws(()=>parseHotkey(invalid));
+});
+test('the same shortcut converts to Obsidian scope modifiers and key names',()=>{
+ assert.deepEqual(localHotkey('Ctrl+Shift+Y'),{modifiers:['Ctrl','Shift'],key:'Y'});
+ assert.deepEqual(localHotkey('Win+Alt+Left'),{modifiers:['Alt','Meta'],key:'ArrowLeft'});
+ assert.equal(localHotkey('Ctrl+Pageup').key,'PageUp');assert.equal(localHotkey('Alt+F9').key,'F9');
+ assert.equal(localHotkey('Ctrl+Space').key,' ');
 });
 
 test('records physical key combinations independently of keyboard language and ignores modifier-only presses',()=>{

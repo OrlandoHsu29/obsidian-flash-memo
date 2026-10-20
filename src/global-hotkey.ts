@@ -35,6 +35,17 @@ export function hotkeyFromEvent(event: Pick<KeyboardEvent, 'code'|'key'|'ctrlKey
   return parseHotkey([...event.ctrlKey?['Ctrl']:[],...event.altKey?['Alt']:[],...event.shiftKey?['Shift']:[],...event.metaKey?['Win']:[],key].join('+'));
 }
 
+export function localHotkey(value: string): import('obsidian').Hotkey {
+  const parsed = parseHotkey(value);
+  const modifiers: import('obsidian').Modifier[] = [];
+  for (const [flag, name] of [[2,'Ctrl'],[1,'Alt'],[4,'Shift'],[8,'Meta']] as const) {
+    if (parsed.modifiers & flag) modifiers.push(name);
+  }
+  const names: Record<number, string> = {32:' ',33:'PageUp',34:'PageDown',35:'End',36:'Home',37:'ArrowLeft',38:'ArrowUp',39:'ArrowRight',40:'ArrowDown',9:'Tab',13:'Enter',27:'Escape',8:'Backspace',46:'Delete',45:'Insert'};
+  const key = names[parsed.key] ?? (parsed.key >= 112 && parsed.key <= 135 ? `F${parsed.key - 111}` : String.fromCharCode(parsed.key));
+  return {modifiers, key};
+}
+
 export type HotkeyStatus = 'off' | 'starting' | 'ready' | 'conflict' | 'invalid' | 'missing' | 'failed' | 'unsupported';
 
 export class GlobalHotkey {
