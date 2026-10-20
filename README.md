@@ -21,7 +21,7 @@ The Canvas creation folder setting is relative to the vault root, for example `D
 
 ## System-wide shortcut (Windows)
 
-Windows x64 enables **Ctrl + Alt + Y** by default, including when another app has focus or Obsidian is minimized. Toggle it in Flash Memo settings, or click Record, press a new combination and save. Recording temporarily releases the existing binding; cancel with Esc, an outside click or a window switch to restore it. The global binding is independent of the in-app binding; assigning the same combination executes only one toggle per press.
+Windows x64 enables **Ctrl + Alt + Y** by default to show or hide the canvas, including when another app has focus or Obsidian is minimized. Toggle it in Flash Memo settings, or click Change, press a new combination and save. Changing the shortcut temporarily releases the existing binding; cancel with Esc, an outside click or a window switch to restore it. The global binding is independent of the in-app binding; assigning the same combination executes only one toggle per press.
 
 The bundled C helper `flash-memo-hotkey.exe` uses Windows `RegisterHotKey` messages without polling, keyboard hooks, or a script runtime. It runs only while global shortcuts are enabled. Disabling the feature or plugin, or exiting Obsidian, stops the helper and releases its binding. A binding already owned by another app or vault is reported in settings. AutoHotkey, PowerToys and Rust are not needed. Obsidian must remain running, with Excalidraw enabled for drawing.
 

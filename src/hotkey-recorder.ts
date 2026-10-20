@@ -36,9 +36,9 @@ export class HotkeyRecorder extends Modal {
 
   async onOpen() {
     this.active = true;
-    this.setTitle(this.t('录制全局快捷键', 'Record global shortcut'));
+    this.setTitle(this.t('修改全局快捷键', 'Change global shortcut'));
     this.contentEl.createEl('p', {text:this.t('直接按下组合键，然后保存。按 Esc 或点击其他位置取消。', 'Press a key combination, then save. Press Esc or click outside to cancel.')});
-    this.preview = this.contentEl.createEl('kbd', {cls:'flash-memo-key-preview',text:this.t('准备录制…', 'Preparing…')});
+    this.preview = this.contentEl.createEl('kbd', {cls:'flash-memo-key-preview',text:this.t('准备中…', 'Preparing…')});
     this.hint = this.contentEl.createDiv({cls:'setting-item-description'});
     new Setting(this.contentEl)
       .addButton(button => button.setButtonText(this.t('取消','Cancel')).onClick(()=>this.close()))
@@ -51,7 +51,7 @@ export class HotkeyRecorder extends Modal {
       if (!this.active) return;
       this.ready = true; this.preview.setText(this.t('等待按键…', 'Waiting for keys…'));
     } catch {
-      if (this.active) this.hint.setText(this.t('暂时无法录制，请取消后重试。', 'Could not start recording. Cancel and try again.'));
+      if (this.active) this.hint.setText(this.t('暂时无法修改快捷键，请取消后重试。', 'Could not change the shortcut. Cancel and try again.'));
     }
   }
 

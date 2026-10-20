@@ -489,7 +489,12 @@ class MemoSettingTab extends PluginSettingTab {
   private statusEl: HTMLElement | null = null;
   constructor(app: App, private plugin: FlashMemo) { super(app, plugin); }
   hide() { this.plugin.cancelHotkeyRecording(); super.hide(); }
-  updateStatus() { if (this.statusEl?.isConnected) this.statusEl.setText(this.plugin.hotkeyProblem() || this.plugin.t('点击录制，直接按下新的组合键。', 'Click Record and press a new key combination.')); }
+  updateStatus() {
+    if (!this.statusEl?.isConnected) return;
+    const description = this.plugin.t('在任意应用中显示或隐藏速记画板，Obsidian 在后台或最小化时也可使用。', 'Show or hide the quick canvas from any app, even when Obsidian is in the background or minimized.');
+    const problem = this.plugin.hotkeyProblem();
+    this.statusEl.setText(problem ? `${description} ${problem}` : description);
+  }
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
@@ -509,10 +514,10 @@ class MemoSettingTab extends PluginSettingTab {
         await p.saveData(p.settings); await p.configureGlobalHotkey();
       }));
     const shortcutSetting = new Setting(containerEl)
-      .setName(p.t('全局按键组合', 'Global key combination'))
+      .setName(p.t('显示/隐藏画板的全局快捷键', 'Global shortcut to show/hide canvas'))
       .setDesc('');
     shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'flash-memo-shortcut'});
-    shortcutSetting.addButton(button=>button.setButtonText(p.t('录制','Record')).setDisabled(!supported).onClick(()=>p.recordGlobalHotkey()));
+    shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).setDisabled(!supported).onClick(()=>p.recordGlobalHotkey()));
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();
     new Setting(containerEl)

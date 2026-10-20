@@ -21,7 +21,7 @@
 
 ## Windows 系统全局快捷键
 
-Windows x64 默认启用 **Ctrl + Alt + Y**，在其他软件获得焦点或 Obsidian 最小化时也可使用。在 Flash Memo 设置中开关全局快捷键，或点击“录制”，直接按下新组合后保存。录制期间暂时释放原快捷键；按 Esc、点击外部或切换窗口取消后自动恢复。与 Obsidian 内的快捷键独立；若设为相同组合，一次按键只执行一次切换。
+Windows x64 默认启用 **Ctrl + Alt + Y** 显示或隐藏画板，在其他软件获得焦点或 Obsidian 最小化时也可使用。在 Flash Memo 设置中开关全局快捷键，或点击“修改”，直接按下新组合后保存。修改期间暂时释放原快捷键；按 Esc、点击外部或切换窗口取消后自动恢复。与 Obsidian 内的快捷键独立；若设为相同组合，一次按键只执行一次切换。
 
 内置 C 编写的 `flash-memo-hotkey.exe`，直接使用 Windows `RegisterHotKey` 消息机制，无轮询、键盘钩子或脚本运行时。只有开启全局快捷键时才运行。关闭此功能、停用插件或 Obsidian 退出后，监听器会退出并释放按键；组合被其他程序或另一个笔记库占用时，会在设置中提示冲突。无需 AutoHotkey、PowerToys 或 Rust 环境。Obsidian 仍需保持运行，支持绘图的 Excalidraw 插件也需启用。
 
