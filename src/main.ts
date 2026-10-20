@@ -787,6 +787,12 @@ class MemoSettingTab extends PluginSettingTab {
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
+    containerEl.classList.add('flash-memo-settings');
+    const section = (name: string) => {
+      new Setting(containerEl).setName(name).setHeading();
+      return containerEl.createDiv({cls: 'flash-memo-settings-section'});
+    };
+    const windowSection = section(p.t('窗口行为', 'Window behavior'));
     const trayStatus = p.tray.status();
     const trayDescription = document.createDocumentFragment();
     trayDescription.append(p.t('关闭 Obsidian 主窗口时收起到托盘，让速记快捷键继续可用。由可选插件 Tray 提供，完全退出请使用托盘菜单的 Close Vault。', 'Keep Obsidian in the system tray when closing its main window so the quick canvas shortcut stays available. Requires the optional Tray plugin; use Close Vault in the tray menu to exit.'));
@@ -796,7 +802,7 @@ class MemoSettingTab extends PluginSettingTab {
       trayDescription.append(p.t(' 插件并启用。', ' plugin and enable it first.'));
     } else if (trayStatus === 'disabled') trayDescription.append(p.t(' Tray 已安装，需先启用。', ' Tray is installed but disabled.'));
     else if (trayStatus === 'unsupported') trayDescription.append(p.t(' 当前 Tray 版本的接口不兼容，请在 Tray 设置中配置。', ' This Tray version has incompatible interfaces; configure it in Tray settings.'));
-    const traySetting = new Setting(containerEl)
+    const traySetting = new Setting(windowSection)
       .setName(p.t('关闭到托盘', 'Close to system tray'))
       .setDesc(trayDescription)
       .addToggle(toggle => toggle.setValue(p.tray.enabled()).setDisabled(trayStatus !== 'ready').onChange(async value => {
@@ -811,35 +817,37 @@ class MemoSettingTab extends PluginSettingTab {
       catch (error) { new Notice(p.t('无法启用 Tray，请在第三方插件设置中检查。', 'Could not enable Tray. Check community plugin settings.')); console.error('Flash Memo Tray', error); }
       finally { if (containerEl.isConnected) this.display(); }
     }));
-    new Setting(containerEl)
+    new Setting(windowSection)
       .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
       .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))
       .addToggle(toggle => toggle.setValue(p.settings.hideOnBlur).onChange(async value => {
         p.settings.hideOnBlur = value;
         await p.saveData(p.settings);
       }));
+    const shortcutSection = section(p.t('快捷键', 'Keyboard shortcut'));
     const supported = process.platform === 'win32' && process.arch === 'x64';
-    new Setting(containerEl)
+    new Setting(shortcutSection)
       .setName(p.t('全局快捷键', 'Global shortcut'))
       .setDesc(p.t('开启后可在 Obsidian 后台或最小化时使用下方快捷键；关闭后仅在 Obsidian 内生效。全局模式仅支持 Windows x64。', 'Use the shortcut below while Obsidian is in the background or minimized. When off, it works inside Obsidian only. Global mode requires Windows x64.'))
       .addToggle(toggle => toggle.setValue(p.settings.globalHotkeyEnabled).setDisabled(!supported).onChange(async value => {
         p.settings.globalHotkeyEnabled = value;
         await p.saveData(p.settings); await p.configureGlobalHotkey();
       }));
-    const shortcutSetting = new Setting(containerEl)
+    const shortcutSetting = new Setting(shortcutSection)
       .setName(p.t('唤起窗口快捷键', 'Window activation shortcut'))
       .setDesc('');
     shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'flash-memo-shortcut'});
     shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).onClick(()=>p.recordGlobalHotkey()));
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();
-    new Setting(containerEl)
+    const drawingSection = section(p.t('画板文件', 'Drawing files'));
+    new Setting(drawingSection)
       .setName(p.t('画板创建路径', 'Canvas creation folder'))
       .setDesc(p.t('相对于知识库根目录，例如 画板/速记。新画板和归档画板均保存在此路径。', 'Relative to the vault root, for example Drawings/Quick notes. New and archived canvases are saved here.'))
       .addText(text => text.setValue(p.settings.folder).onChange(async value => {
         p.settings.folder = value; await p.saveData(p.settings);
       }));
-    new Setting(containerEl)
+    new Setting(drawingSection)
       .setName(p.t('当前画板', 'Current canvas'))
       .setDesc(p.settings.file || p.t('首次呼出时自动创建。', 'Created automatically on first use.'));
   }

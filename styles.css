@@ -62,3 +62,17 @@ body.flash-memo-window .flash-memo-bar .flash-memo-title {
 .flash-memo-shortcut { white-space: nowrap; }
 .flash-memo-error { max-width: 420px; }
 .flash-memo-error-details { max-height: 150px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.flash-memo-settings .flash-memo-settings-section {
+  padding: 0 20px; margin-bottom: 24px;
+  border-radius: var(--radius-l); background: var(--background-secondary);
+}
+.flash-memo-settings .flash-memo-settings-section > .setting-item {
+  margin: 0; padding: 18px 0; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none;
+}
+.flash-memo-settings .flash-memo-settings-section > .setting-item + .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.flash-memo-settings > .setting-item-heading {
+  margin: 0 0 10px; padding: 0; border: 0; background: transparent;
+}
