@@ -80,6 +80,7 @@ export default class FlashMemo extends Plugin {
   private archiveButton: HTMLButtonElement | null = null;
   private nameButton: HTMLButtonElement | null = null;
   private renaming = false;
+  private cancelNameEdit: (() => void) | null = null;
   private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
 
   t(zh: string, en: string): string {
@@ -116,6 +117,7 @@ export default class FlashMemo extends Plugin {
       this.updateName();
       if (!this.archiving) void this.saveData(this.settings);
     }));
+    this.registerEvent(this.app.vault.on('delete', file => this.onDrawingDeleted(file.path)));
     this.registerEvent(this.app.workspace.on('window-close', win => {
       if (win !== this.popout) return;
       this.reset();
@@ -207,7 +209,7 @@ export default class FlashMemo extends Plugin {
   private async ensureDrawing(): Promise<TFile> {
     const plugin = this.drawingPlugin();
     const existing = this.settings.file && this.app.vault.getFileByPath(this.settings.file);
-    if (existing) return existing;
+    if (existing && await this.app.vault.adapter.exists(existing.path)) return existing;
     const folder = await ensureDrawingFolder(this.app, this.settings.folder);
     const content = await plugin.getBlankDrawing();
     const extension = plugin.settings?.compatibilityMode ? '.excalidraw' : '.excalidraw.md';
@@ -220,18 +222,28 @@ export default class FlashMemo extends Plugin {
 
   async toggle() {
     if (this.disposed || this.opening || this.archiving || this.renaming) return;
-    if (this.alive()) {
-      if (this.hidden || this.hiding) this.show();
-      else await this.hide('escape');
-      return;
-    }
-    this.reset();
     this.opening = true;
-    this.keepRendererAwake();
     let created: WorkspaceLeaf | null = null;
     try {
+      this.keepRendererAwake();
+      // A popout can survive after its drawing has been deleted or its view cleared.
+      // Validate the file even when the existing native window is still alive.
       const file = await this.ensureDrawing();
       if (this.disposed) return;
+      if (this.alive()) {
+        if ((this.leaf!.view as DrawingView).file !== file) {
+          this.hideGeneration++; this.hiding = false; this.clearBlur();
+          this.keepRendererAwake();
+          await this.leaf!.setViewState({type:'excalidraw',state:{file:file.path},active:true});
+          if (this.disposed || !this.alive()) return;
+          this.updateName();
+          this.show();
+        } else if (this.hidden || this.hiding) this.show();
+        else await this.hide('escape');
+        return;
+      }
+      this.reset();
+      this.keepRendererAwake();
       created = this.app.workspace.getLeaf('window');
       await created.setViewState({ type: 'excalidraw', state: { file: file.path }, active: true });
       await this.attach(created);
@@ -240,12 +252,11 @@ export default class FlashMemo extends Plugin {
       await this.saveData(this.settings);
       this.show();
     } catch (error) {
-      this.reset();
-      created?.detach();
+      if (created) { this.reset(); created.detach(); }
       throw error;
     } finally {
       this.opening = false;
-      if (!this.alive()) this.restoreThrottling();
+      if (!this.alive() || (this.hidden && !this.hiding)) this.restoreThrottling();
     }
   }
 
@@ -296,6 +307,7 @@ export default class FlashMemo extends Plugin {
     nameInput.hidden = true;
     nameInput.setAttribute('aria-label', this.t('文件名（不含扩展名）', 'File name (without extension)'));
     const finishEdit = () => { nameInput.hidden = true; if (this.nameButton) this.nameButton.hidden = false; };
+    this.cancelNameEdit = finishEdit;
     const onRename = () => {
       if (this.archiving || this.renaming) return;
       nameInput.value = drawingName(this.settings.file).name;
@@ -370,6 +382,7 @@ export default class FlashMemo extends Plugin {
       this.pinButton?.removeEventListener('click', onPin);
       closeButton.removeEventListener('click', onClose);
       this.nameButton?.removeEventListener('click', onRename); this.nameButton = null;
+      this.cancelNameEdit = null;
       nameInput.removeEventListener('blur', onNameBlur);
       nameInput.removeEventListener('keydown', onNameKey);
       this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
@@ -392,6 +405,9 @@ export default class FlashMemo extends Plugin {
     const generation = ++this.hideGeneration;
     this.hiding = true;
     try {
+      const exists = !!this.settings.file && await this.app.vault.adapter.exists(this.settings.file);
+      if (generation !== this.hideGeneration || !this.alive()) return;
+      if (!exists) { this.hideDeletedDrawing(); return; }
       const view = this.leaf!.view as DrawingView;
       if (!view.forceSave) throw Error(this.t('当前 Excalidraw 版本不支持保存接口，请更新插件。', 'Please update Excalidraw: its save interface is unavailable.'));
       await view.forceSave();
@@ -406,8 +422,35 @@ export default class FlashMemo extends Plugin {
       this.hidden = true;
       this.native!.hide();
       this.restoreThrottling();
-    } catch (error) { this.restoreWindowOpacity(); this.report(error); }
+    } catch (error) {
+      if (generation !== this.hideGeneration || !this.alive()) return;
+      try {
+        if (!await this.app.vault.adapter.exists(this.settings.file)) { this.hideDeletedDrawing(); return; }
+      } catch { /* Report the original save/storage error when deletion cannot be confirmed. */ }
+      if (generation !== this.hideGeneration || !this.alive()) return;
+      this.restoreWindowOpacity(); this.report(error);
+    }
     finally { if (generation === this.hideGeneration) this.hiding = false; }
+  }
+
+  private onDrawingDeleted(path: string) {
+    if (path !== this.settings.file && !this.settings.file.startsWith(path + '/')) return;
+    // A replacement may already have been created before a delayed delete event.
+    if (this.app.vault.getFileByPath(this.settings.file)) return;
+    this.hideDeletedDrawing();
+  }
+
+  private hideDeletedDrawing() {
+    if (this.disposed || !this.alive()) return;
+    this.hideGeneration++; this.hiding = false; this.clearBlur();
+    this.cancelNameEdit?.(); this.archiveDialog?.close();
+    if (process.platform === 'win32' && this.native!.setOpacity && this.hiddenOpacity === null) {
+      const opacity = this.native!.getOpacity?.() ?? 1;
+      this.native!.setOpacity(0); this.hiddenOpacity = opacity;
+    }
+    this.hidden = true;
+    this.native!.hide();
+    this.restoreThrottling();
   }
 
   private confirmArchive() {

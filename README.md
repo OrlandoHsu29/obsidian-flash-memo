@@ -17,6 +17,8 @@ Install and enable [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw
 
 Desktop only. Window control uses the desktop popout's internal `electronWindow` interface, so future Obsidian updates may require adaptation. No drawing engine is bundled, and Floating Notes is not a dependency.
 
+If the current canvas file is deleted, its popout hides automatically without trying to save the deleted file. Opening Flash Memo again creates a new numbered canvas automatically.
+
 While the canvas is visible, the main renderer is kept awake so Excalidraw can save even when the main window is minimized. Its previous throttling setting is restored after hiding or disabling Flash Memo.
 
 The Canvas creation folder setting is relative to the vault root, for example `Drawings/Quick notes`. New and archived canvases are stored there. Archive names resemble `Sketch 2026-10-18 12-30-05.excalidraw.md`, with a number added on collisions. Archiving moves the original through Obsidian's file manager to maintain existing note links; save or creation failures never delete the old drawing.
