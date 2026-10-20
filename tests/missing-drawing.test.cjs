@@ -16,7 +16,7 @@ const FlashMemo=loaded.exports.default;
 function fixture(){
  const p=new FlashMemo(),old={path:'Flash Memo/Original.excalidraw.md'},files=new Map([[old.path,old],['Flash Memo',{children:[]}]]);
  const disk=new Set([old.path]);let creates=0,shows=0,hides=0,opens=0;
- const native={isDestroyed:()=>false,isFocused:()=>false,hide(){hides++;}};
+ const native={isDestroyed:()=>false,isFocused:()=>false,setAlwaysOnTop(){},hide(){hides++;}};
  const leaf={id:'test-leaf',view:{file:old},async setViewState(state){this.view={file:files.get(state.state.file)};},detach(){}};
  p.app={vault:{adapter:{exists:async path=>disk.has(path)},getFileByPath:path=>files.get(path),getAbstractFileByPath:path=>files.get(path),async create(path){creates++;const file={path};files.set(path,file);disk.add(path);return file;}},workspace:{getLeaf(){opens++;return leaf;}}};
  p.settings.file=old.path;p.leaf=leaf;p.native=native;p.hidden=true;
@@ -210,4 +210,69 @@ test('global-off mode registers one local shortcut and cleans it up for recordin
  f.p.recording=false;f.p.configureLocalHotkey();assert.equal(active.size,1);
  f.p.settings.globalHotkeyEnabled=true;f.p.configureLocalHotkey();assert.equal(active.size,0);
  f.p.settings.globalHotkeyEnabled=false;f.p.disposed=true;f.p.configureLocalHotkey();assert.equal(active.size,0);
+});
+
+test('exit stays above the activated app through saving and fade, then releases topmost after hiding',async()=>{
+ const f=fixture(),order=[];f.p.hidden=false;
+ f.p.native.setAlwaysOnTop=value=>order.push(value?'topmost':'normal');
+ f.p.native.focus=()=>assert.fail('Hiding must not steal focus');
+ f.leaf.view.forceSave=async()=>{assert.equal(f.p.hideLayerHeld,true);order.push('save');};
+ f.p.windowFade.fadeOut=async()=>{assert.equal(f.p.hideLayerHeld,true);order.push('fade');return true;};
+ f.p.native.hide=()=>order.push('hide');
+ await FlashMemo.prototype.hide.call(f.p,'blur');
+ assert.deepEqual(order,['topmost','save','fade','hide','normal']);
+ assert.equal(f.p.settings.pinned,false);assert.equal(f.p.hideLayerHeld,false);
+});
+
+test('save failure releases temporary topmost and keeps the drawing available',async()=>{
+ const f=fixture(),layers=[];f.p.hidden=false;f.p.report=()=>{};
+ f.p.native.setAlwaysOnTop=value=>layers.push(value);
+ f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
+ await FlashMemo.prototype.hide.call(f.p,'blur');
+ assert.deepEqual(layers,[true,false]);assert.equal(f.p.hidden,false);assert.equal(f.p.hideLayerHeld,false);
+});
+
+test('reopening during save cancels hiding without dropping the layer needed for the next blur',async()=>{
+ const f=fixture(),layers=[];f.p.hidden=false;let finish;
+ f.p.native.setAlwaysOnTop=value=>layers.push(value);f.p.native.show=()=>{};f.p.native.focus=()=>{};
+ f.leaf.view.forceSave=()=>new Promise(resolve=>{finish=resolve;});
+ const hiding=FlashMemo.prototype.hide.call(f.p,'blur');while(!finish)await Promise.resolve();
+ FlashMemo.prototype.show.call(f.p);finish();await hiding;
+ assert.deepEqual(layers,[true]);assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);assert.equal(f.p.settings.pinned,false);
+});
+
+test('hiding a pinned drawing preserves the permanent pin setting and native layer',async()=>{
+ const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;
+ f.p.native.setAlwaysOnTop=()=>assert.fail('Permanent pin must not be changed');
+ f.leaf.view.forceSave=async()=>{};f.p.windowFade.fadeOut=async()=>true;
+ await FlashMemo.prototype.hide.call(f.p,'close');
+ assert.equal(f.p.hidden,true);assert.equal(f.p.settings.pinned,true);
+});
+
+test('auto-hide is prepared before showing and does not raise the window again during exit',async()=>{
+ const f=fixture(),order=[];
+ f.p.native.setAlwaysOnTop=value=>order.push(value?'topmost':'normal');
+ f.p.native.show=()=>order.push('show');f.p.native.focus=()=>order.push('focus');
+ FlashMemo.prototype.show.call(f.p);
+ f.leaf.view.forceSave=async()=>order.push('save');
+ f.p.windowFade.fadeOut=async()=>{order.push('fade');return true;};
+ f.p.native.hide=()=>order.push('hide');
+ await FlashMemo.prototype.hide.call(f.p,'blur');
+ assert.deepEqual(order,['topmost','show','focus','save','fade','hide','normal']);
+ assert.equal(f.p.settings.pinned,false);
+});
+
+test('disabling auto-hide releases the prepared layer and enabling it prepares a focused window',async()=>{
+ const f=fixture(),layers=[];f.p.hidden=false;
+ f.p.native.setAlwaysOnTop=value=>layers.push(value);f.p.native.isFocused=()=>true;
+ f.p.prepareHideLayer();await f.p.setHideOnBlur(false);
+ assert.deepEqual(layers,[true,false]);assert.equal(f.p.hideLayerHeld,false);
+ await f.p.setHideOnBlur(true);assert.deepEqual(layers,[true,false,true]);assert.equal(f.p.settings.pinned,false);
+ f.p.reset();assert.deepEqual(layers,[true,false,true,false]);
+});
+
+test('showing with auto-hide disabled does not prepare a temporary topmost layer',()=>{
+ const f=fixture();f.p.settings.hideOnBlur=false;
+ f.p.native.setAlwaysOnTop=()=>assert.fail('Auto-hide is disabled');f.p.native.show=()=>{};f.p.native.focus=()=>{};
+ FlashMemo.prototype.show.call(f.p);assert.equal(f.p.hideLayerHeld,false);
 });

@@ -14,6 +14,7 @@ import { drawingName, renamedDrawingPath } from './drawing-name';
 import { DrawingPicker } from './drawing-picker';
 import { CanvasError } from './canvas-error';
 import { TrayIntegration, TrayPluginManager } from './tray-integration';
+import { WindowFade } from './window-fade';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -65,6 +66,8 @@ export default class FlashMemo extends Plugin {
   private native: DesktopWindow | null = null;
   private hidden = false;
   private hiddenOpacity: number | null = null;
+  private windowFade = new WindowFade();
+  private hideLayerHeld = false;
   private opening = false;
   private disposed = false;
   private hideGeneration = 0;
@@ -402,16 +405,26 @@ export default class FlashMemo extends Plugin {
     closeButton.addEventListener('click', onClose);
     doc.body.append(bar);
     this.updatePin();
-    const onBlur = () => {
+    const onBlur = () => this.runWindowAction(() => {
       this.drawingPicker?.hide();
       this.clearBlur();
-      if (!this.settings.hideOnBlur || this.settings.pinned || this.hidden) return;
+      if (!this.settings.hideOnBlur || this.settings.pinned || this.hidden) {
+        if (!this.settings.hideOnBlur) this.restoreHideLayer();
+        return;
+      }
+      if (this.errorDialog || this.errorClosing || this.hiding || this.archiving || this.renaming || this.switching) return;
+      // Already held while focused: do not change the layer after activation moves.
+      this.holdHideLayer();
       this.blurTimer = setTimeout(() => {
         this.blurTimer = null;
         if (!native!.isDestroyed() && !native!.isFocused()) this.requestHide('blur');
+        else this.restoreHideLayer();
       }, 0);
-    };
-    const onFocus = () => { this.clearBlur(); this.hideGeneration++; this.hiding = false; };
+    });
+    const onFocus = () => this.runWindowAction(() => {
+      this.clearBlur(); this.hideGeneration++; this.hiding = false;
+      this.restoreWindowOpacity(true); this.prepareHideLayer();
+    });
     const onNativeShow = () => this.runWindowAction(() => {
       // Tray restores all known windows. A canvas hidden by Flash Memo should
       // stay hidden until the user explicitly opens it.
@@ -443,6 +456,7 @@ export default class FlashMemo extends Plugin {
     native.on('show', onNativeShow); native.on('hide', onNativeHide);
     native.on('resize', onBounds); native.on('moved', onBounds);
     doc.addEventListener('keydown', onKey);
+    if (native.isFocused()) this.prepareHideLayer();
     this.detach = () => {
       native!.off('blur', onBlur); native!.off('focus', onFocus);
       native!.off('show', onNativeShow); native!.off('hide', onNativeHide);
@@ -467,7 +481,8 @@ export default class FlashMemo extends Plugin {
     this.hideGeneration++; this.hiding = false; this.clearBlur();
     this.hidden = false;
     this.keepRendererAwake();
-    this.restoreWindowOpacity();
+    this.restoreWindowOpacity(true);
+    this.prepareHideLayer();
     this.native!.show();
     this.native!.focus();
   }
@@ -483,11 +498,15 @@ export default class FlashMemo extends Plugin {
   }
 
   private async hide(reason: 'blur' | 'escape' | 'close') {
-    if (this.errorDialog || this.errorClosing || !this.alive() || this.hidden || this.hiding || this.archiving || this.renaming || this.switching || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) return;
+    if (this.errorDialog || this.errorClosing || !this.alive() || this.hidden || this.hiding || this.archiving || this.renaming || this.switching || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) {
+      if (!this.hiding) this.restoreHideLayer();
+      return;
+    }
     this.drawingPicker?.hide();
     const generation = ++this.hideGeneration;
     this.hiding = true;
     try {
+      this.holdHideLayer();
       const exists = !!this.settings.file && await this.app.vault.adapter.exists(this.settings.file);
       if (generation !== this.hideGeneration || !this.alive()) return;
       if (!exists) { this.hideDeletedDrawing(); return; }
@@ -496,12 +515,9 @@ export default class FlashMemo extends Plugin {
       await view.forceSave();
       if (generation !== this.hideGeneration || !this.alive()) return;
       if (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned || this.native!.isFocused())) return;
-      // Make the saved canvas disappear before Windows animates the native hide.
-      if (reason === 'blur' && process.platform === 'win32' && this.native!.setOpacity) {
-        const opacity = this.native!.getOpacity?.() ?? 1;
-        this.native!.setOpacity(0);
-        this.hiddenOpacity = opacity;
-      }
+      // Animate explicitly: native hide does not reliably animate on Windows.
+      if (!await this.windowFade.fadeOut(this.native!)) return;
+      if (generation !== this.hideGeneration || !this.alive()) return;
       this.hidden = true;
       this.native!.hide();
       this.restoreThrottling();
@@ -513,7 +529,9 @@ export default class FlashMemo extends Plugin {
       if (generation !== this.hideGeneration || !this.alive()) return;
       this.restoreWindowOpacity(); this.report(error, true);
     }
-    finally { if (generation === this.hideGeneration) this.hiding = false; }
+    finally {
+      if (generation === this.hideGeneration) { this.hiding = false; this.restoreHideLayer(); }
+    }
   }
 
   private onDrawingDeleted(path: string) {
@@ -525,6 +543,7 @@ export default class FlashMemo extends Plugin {
 
   private hideDeletedDrawing() {
     if (this.disposed || !this.alive()) return;
+    this.restoreWindowOpacity();
     this.hideGeneration++; this.hiding = false; this.clearBlur();
     this.cancelNameEdit?.(); this.archiveDialog?.close();
     this.drawingPicker?.hide();
@@ -553,7 +572,7 @@ export default class FlashMemo extends Plugin {
     const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
     if (!current || !view.forceSave) { this.report(Error(this.t('当前画板暂时无法保存，请稍后重试。','The current canvas cannot be saved yet. Try again shortly.')), true); return; }
     this.archiving = true; this.archiveButton!.disabled = true;
-    this.hideGeneration++; this.hiding = false; this.clearBlur(); this.keepRendererAwake();
+    this.hideGeneration++; this.hiding = false; this.clearBlur(); this.restoreWindowOpacity(true); this.keepRendererAwake();
     let result: Awaited<ReturnType<typeof archiveDrawing>> | undefined;
     try {
       await view.forceSave();
@@ -592,6 +611,7 @@ export default class FlashMemo extends Plugin {
     const previous = this.settings.file;
     this.switching = true;
     this.hideGeneration++; this.hiding = false; this.clearBlur();
+    this.restoreWindowOpacity(true);
     this.drawingPicker?.hide(); this.cancelNameEdit?.();
     if (this.nameButton) this.nameButton.disabled = true;
     this.keepRendererAwake();
@@ -641,6 +661,7 @@ export default class FlashMemo extends Plugin {
       if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
       this.renaming = true;
       this.hideGeneration++; this.hiding = false; this.clearBlur();
+      this.restoreWindowOpacity(true);
       this.nameButton!.disabled = true;
       await view.forceSave();
       if (this.disposed || !this.alive() || this.leaf!.view !== view) return;
@@ -663,8 +684,10 @@ export default class FlashMemo extends Plugin {
   private togglePin() {
     if (!this.alive()) return;
     this.hideGeneration++; this.hiding = false; this.clearBlur();
+    this.restoreWindowOpacity(true);
     this.settings.pinned = !this.settings.pinned;
-    this.native!.setAlwaysOnTop(this.settings.pinned);
+    this.hideLayerHeld = !this.settings.pinned && this.settings.hideOnBlur && !this.hidden;
+    this.native!.setAlwaysOnTop(this.settings.pinned || this.hideLayerHeld);
     this.updatePin();
     void this.saveData(this.settings).catch(error => this.report(error, true));
   }
@@ -679,7 +702,33 @@ export default class FlashMemo extends Plugin {
     button.classList.toggle('is-active', this.settings.pinned);
   }
 
-  private restoreWindowOpacity() {
+  async setHideOnBlur(value: boolean) {
+    this.settings.hideOnBlur = value;
+    if (value && this.alive() && !this.hidden && this.native!.isFocused()) this.prepareHideLayer();
+    else this.restoreHideLayer();
+    await this.saveData(this.settings);
+  }
+
+  private prepareHideLayer() {
+    if (this.settings.hideOnBlur && !this.hidden && !this.errorDialog) this.holdHideLayer();
+    else this.restoreHideLayer();
+  }
+
+  private holdHideLayer() {
+    if (this.hideLayerHeld || !this.alive() || this.settings.pinned) return;
+    this.hideLayerHeld = true;
+    this.native!.setAlwaysOnTop(true);
+  }
+
+  private restoreHideLayer() {
+    if (!this.hideLayerHeld) return;
+    this.hideLayerHeld = false;
+    if (this.alive()) this.native!.setAlwaysOnTop(this.settings.pinned);
+  }
+
+  private restoreWindowOpacity(keepLayer = false) {
+    this.windowFade.cancel();
+    if (!keepLayer) this.restoreHideLayer();
     if (this.hiddenOpacity === null) return;
     if (this.native && !this.native.isDestroyed()) this.native.setOpacity?.(this.hiddenOpacity);
     this.hiddenOpacity = null;
@@ -821,8 +870,7 @@ class MemoSettingTab extends PluginSettingTab {
       .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
       .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))
       .addToggle(toggle => toggle.setValue(p.settings.hideOnBlur).onChange(async value => {
-        p.settings.hideOnBlur = value;
-        await p.saveData(p.settings);
+        await p.setHideOnBlur(value);
       }));
     const shortcutSection = section(p.t('快捷键', 'Keyboard shortcut'));
     const supported = process.platform === 'win32' && process.arch === 'x64';

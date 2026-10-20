@@ -17,7 +17,7 @@ Open a canvas with one shortcut, sketch or write, and click elsewhere to save an
 ## Highlights
 
 - **One shortcut, one familiar canvas.** Show or hide the same scratchpad; optionally use a system-wide shortcut on Windows x64.
-- **Out of the way when you need it.** Save and hide on focus loss, without an exit animation, or pin the canvas above other windows.
+- **Out of the way when you need it.** Save and hide on focus loss with a short fade-out and no added blur delay, or pin the canvas above other windows.
 - **Files within reach.** Click the title to switch drawings; double-click to rename.
 - **A fresh page without losing the last one.** Archive the current drawing after confirmation and continue on a blank canvas.
 - **Your vault, your files.** Choose a drawing folder, embed drawings with `![[...]]`, and keep them when you disable the plugin.
