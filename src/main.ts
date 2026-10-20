@@ -13,6 +13,7 @@ import { archiveDrawing, availableDrawingPath, drawingFiles, drawingFolder, ensu
 import { drawingName, renamedDrawingPath } from './drawing-name';
 import { DrawingPicker } from './drawing-picker';
 import { CanvasError } from './canvas-error';
+import { TrayIntegration, TrayPluginManager } from './tray-integration';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -88,6 +89,10 @@ export default class FlashMemo extends Plugin {
   private switching = false;
   private errorDialog: CanvasError | null = null;
   private errorClosing = false;
+  readonly tray = new TrayIntegration(() => (this.app as App & {plugins: TrayPluginManager}).plugins, () => {
+    const main = (window as Window & {electronWindow?: DesktopWindow}).electronWindow;
+    main?.show(); main?.focus();
+  });
   private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
 
   t(zh: string, en: string): string {
@@ -386,6 +391,16 @@ export default class FlashMemo extends Plugin {
       }, 0);
     };
     const onFocus = () => { this.clearBlur(); this.hideGeneration++; this.hiding = false; };
+    const onNativeShow = () => this.runWindowAction(() => {
+      // Tray restores all known windows. A canvas hidden by Flash Memo should
+      // stay hidden until the user explicitly opens it.
+      if (this.hidden && !this.errorDialog) native!.hide();
+    });
+    const onNativeHide = () => this.runWindowAction(() => {
+      if (this.hidden || this.hiding) return;
+      if (this.errorDialog) this.show();
+      else this.requestHide('close');
+    });
     const onBounds = () => {
       if (this.boundsTimer) clearTimeout(this.boundsTimer);
       this.boundsTimer = setTimeout(() => {
@@ -404,10 +419,12 @@ export default class FlashMemo extends Plugin {
       this.requestHide('escape');
     };
     native.on('blur', onBlur); native.on('focus', onFocus);
+    native.on('show', onNativeShow); native.on('hide', onNativeHide);
     native.on('resize', onBounds); native.on('moved', onBounds);
     doc.addEventListener('keydown', onKey);
     this.detach = () => {
       native!.off('blur', onBlur); native!.off('focus', onFocus);
+      native!.off('show', onNativeShow); native!.off('hide', onNativeHide);
       native!.off('resize', onBounds); native!.off('moved', onBounds);
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
@@ -748,6 +765,31 @@ class MemoSettingTab extends PluginSettingTab {
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
+    const trayStatus = p.tray.status();
+    const trayDescription = document.createDocumentFragment();
+    trayDescription.append(p.t('关闭 Obsidian 主窗口时收起到托盘，让速记快捷键继续可用。由可选插件 Tray 提供，完全退出请使用托盘菜单的 Close Vault。', 'Keep Obsidian in the system tray when closing its main window so the quick canvas shortcut stays available. Requires the optional Tray plugin; use Close Vault in the tray menu to exit.'));
+    if (trayStatus === 'missing') {
+      trayDescription.append(p.t(' 推荐先安装 ', ' Install the recommended '));
+      trayDescription.createEl('a', {text: 'Tray', href: 'obsidian://show-plugin?id=tray'});
+      trayDescription.append(p.t(' 插件并启用。', ' plugin and enable it first.'));
+    } else if (trayStatus === 'disabled') trayDescription.append(p.t(' Tray 已安装，需先启用。', ' Tray is installed but disabled.'));
+    else if (trayStatus === 'unsupported') trayDescription.append(p.t(' 当前 Tray 版本的接口不兼容，请在 Tray 设置中配置。', ' This Tray version has incompatible interfaces; configure it in Tray settings.'));
+    const traySetting = new Setting(containerEl)
+      .setName(p.t('关闭到托盘', 'Close to system tray'))
+      .setDesc(trayDescription)
+      .addToggle(toggle => toggle.setValue(p.tray.enabled()).setDisabled(trayStatus !== 'ready').onChange(async value => {
+        toggle.setDisabled(true);
+        try { await p.tray.setEnabled(value); }
+        catch (error) { new Notice(p.t('无法更改关闭到托盘设置，请检查 Tray 是否已启用并可正常使用。', 'Could not update close-to-tray. Check that Tray is enabled and working.')); console.error('Flash Memo Tray', error); }
+        finally { if (containerEl.isConnected) this.display(); }
+      }));
+    if (trayStatus === 'disabled') traySetting.addButton(button => button.setButtonText(p.t('启用 Tray', 'Enable Tray')).onClick(async () => {
+      button.setDisabled(true);
+      try { await p.tray.enablePlugin(); }
+      catch (error) { new Notice(p.t('无法启用 Tray，请在第三方插件设置中检查。', 'Could not enable Tray. Check community plugin settings.')); console.error('Flash Memo Tray', error); }
+      finally { if (containerEl.isConnected) this.display(); }
+    }));
+
     new Setting(containerEl)
       .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
       .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))

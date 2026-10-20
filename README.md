@@ -33,6 +33,12 @@ The bundled C helper `flash-memo-hotkey.exe` uses Windows `RegisterHotKey` messa
 
 Other platforms can use an external launcher with `obsidian://flash-memo?vault=YOUR_PERCENT_ENCODED_VAULT_NAME`. Without a vault parameter, whichever vault receives the URI handles it.
 
+## Keep Obsidian in the system tray
+
+Install and enable the optional [Tray plugin by dragonwocky](https://github.com/dragonwocky/obsidian-tray) from Obsidian's community plugins. Flash Memo settings then provide **Close to system tray**, which updates Tray's own background setting and enables its tray icon. The setting is unavailable until Tray is enabled; an installation link or enable button is shown as appropriate. Changing it reloads Tray to apply the behavior. Other Tray preferences are preserved.
+
+Closing Obsidian's main window can then keep the vault running so Flash Memo's global shortcut remains available. To close the vault completely, use **Close Vault** from Tray's menu. Restoring Obsidian through Tray keeps hidden Flash Memo canvases hidden; hiding a visible canvas through Tray requests a save. This integration uses Tray's internal plugin interfaces and is tested with Tray 0.3.5 on Windows; future versions may require adaptation. Tray is independent, distributed under its own MIT license, and is not bundled with Flash Memo. Disabling Flash Memo does not turn off Tray's background mode.
+
 ## Build
 
 Node.js 22 recommended, plus the Visual Studio Build Tools “Desktop development with C++” workload. On Windows:

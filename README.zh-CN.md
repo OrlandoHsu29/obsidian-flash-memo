@@ -33,6 +33,12 @@ Windows x64 默认启用 **Ctrl + Alt + Y** 显示或隐藏画板，在其他软
 
 其他平台可通过 `obsidian://flash-memo?vault=你的笔记库名称的URL编码` 接入外部启动器。不提供 vault 参数时，由接收 URI 的笔记库响应。
 
+## 关闭 Obsidian 后保留速记入口
+
+推荐从 Obsidian 第三方插件市场安装并启用 [dragonwocky 的 Tray 插件](https://github.com/dragonwocky/obsidian-tray)。之后可在 Flash Memo 设置中开启“关闭到托盘”，同步修改 Tray 的后台运行设置，并开启托盘图标。Tray 未启用时此开关不可用，会按安装状态显示安装链接或启用按钮。修改开关会重载 Tray，使设置生效；保留 Tray 的其他配置。
+
+关闭 Obsidian 主窗口后，笔记库仍可在后台运行，Flash Memo 的全局快捷键继续可用。需要彻底关闭当前笔记库时，请在托盘菜单中选择 **Close Vault**。从托盘恢复 Obsidian 时，已隐藏的速记画板保持隐藏；通过托盘收起可见画板时，Flash Memo 会请求保存。适配使用 Tray 的内部插件接口，已针对 Windows 上的 Tray 0.3.5 验证，未来版本可能需要调整。Tray 是独立插件，使用其自身的 MIT 协议，不随 Flash Memo 打包；停用 Flash Memo 不会关闭 Tray 的后台运行模式。
+
 ## 构建与安装
 
 建议 Node.js 22，并安装 Visual Studio Build Tools 的“使用 C++ 的桌面开发”工作负载。Windows 下执行：
