@@ -1,5 +1,11 @@
 import type { App, TFile } from 'obsidian';
 
+export function drawingFiles(app: App, folder: string): TFile[] {
+  const prefix = drawingFolder(folder) + '/';
+  return app.vault.getFiles().filter(file => file.path.startsWith(prefix) && /\.excalidraw(?:\.md)?$/i.test(file.path))
+    .sort((a, b) => a.path.localeCompare(b.path, undefined, {numeric: true, sensitivity: 'base'}));
+}
+
 export function drawingFolder(value: string): string {
   const path=(value.trim() || 'Flash Memo').replace(/\\/g,'/').replace(/\/+$/,'');
   if (!path || path.startsWith('/') || path.split('/').some(part=>part==='..'||part.includes(':'))) throw Error('invalid-folder');

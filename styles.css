@@ -33,6 +33,25 @@ body.flash-memo-window .flash-memo-bar .flash-memo-title {
   white-space: nowrap; font-size: var(--font-ui-small);
 }
 .flash-memo-bar .flash-memo-name:hover { background: var(--background-modifier-hover); }
+.flash-memo-bar .flash-memo-name::after { content: ' ▾'; color: var(--text-muted); }
+.flash-memo-bar .flash-memo-name[aria-expanded="true"] {
+  background: var(--background-modifier-hover); box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+.flash-memo-picker {
+  position: fixed; z-index: var(--layer-menu, 1000); box-sizing: border-box;
+  max-height: min(360px, calc(100vh - 52px)); overflow-y: auto;
+  padding: 4px; -webkit-app-region: no-drag;
+}
+.flash-memo-picker .flash-memo-picker-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
+  padding: 7px 8px; text-align: left; box-shadow: none; border: none;
+  background: transparent; color: var(--text-normal); -webkit-app-region: no-drag;
+}
+.flash-memo-picker .flash-memo-picker-item:hover,
+.flash-memo-picker .flash-memo-picker-item:focus-visible { background: var(--background-modifier-hover); }
+.flash-memo-picker-check { width: 14px; flex-shrink: 0; color: var(--text-accent); }
+.flash-memo-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flash-memo-picker-folder { max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .flash-memo-bar .flash-memo-name-input {
   -webkit-app-region: no-drag; width: 100%; min-width: 0; height: 28px;
   text-align: center; font-size: var(--font-ui-small);

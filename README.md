@@ -9,7 +9,7 @@ A small floating Excalidraw canvas for quick sketches in Obsidian. Independent o
 - **Pin**: keep the canvas visible and above other windows. Esc still hides it.
 - **Close (×)**: save and hide the window, including when pinned. Reopen it to continue on the same canvas.
 - Drag the title bar to move the window. Resize normally; position and size are remembered.
-- The title bar shows the canvas file name. Click it to rename; Enter saves, Esc cancels, and the drawing extension is preserved.
+- Click the title bar's file name to choose a canvas from the configured folder and its subfolders, including archived drawings. Switching saves the current canvas first. Double-click the name to rename; Enter saves, Esc cancels, and the drawing extension is preserved.
 - The left wordmark reads **Flash memo** in the system font **Segoe Script**, with cursive fallbacks when unavailable. No font files are bundled.
 - **Archive button**: after confirmation, save and timestamp the current canvas, then switch the same window to a new blank canvas.
 

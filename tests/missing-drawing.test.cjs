@@ -90,3 +90,47 @@ test('save errors for an existing drawing still keep the window available',async
  await FlashMemo.prototype.hide.call(f.p,'close');
  assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);assert.equal(reports,1);
 });
+test('canvas switching saves the source before opening and persisting the target',async()=>{
+ const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);const order=[];
+ f.leaf.view.forceSave=async()=>{order.push('save');};
+ const setViewState=f.leaf.setViewState.bind(f.leaf);
+ f.leaf.setViewState=async state=>{order.push('switch');await setViewState(state);};
+ f.p.saveData=async settings=>{order.push('persist');assert.equal(settings.file,target.path);};
+ await f.p.switchDrawing(target);
+ assert.deepEqual(order,['save','switch','persist']);assert.equal(f.p.settings.file,target.path);
+ assert.equal(f.leaf.view.file,target);assert.equal(f.p.switching,false);
+});
+test('failed source save aborts switching and preserves the source drawing',async()=>{
+ const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
+ f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
+ await f.p.switchDrawing(target);
+ assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);
+ assert.equal(reports,1);assert.equal(f.p.switching,false);
+});
+test('target deleted during source save cannot be opened',async()=>{
+ const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
+ f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{f.files.delete(target.path);f.disk.delete(target.path);};
+ await f.p.switchDrawing(target);
+ assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);assert.equal(reports,1);
+});
+test('failed target view restores the source and keeps its persisted path',async()=>{
+ const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);f.p.report=()=>{};
+ f.leaf.view.forceSave=async()=>{};
+ const setViewState=f.leaf.setViewState.bind(f.leaf);
+ f.leaf.setViewState=async state=>{if(state.state.file===target.path)throw Error('View failed');await setViewState(state);};
+ await f.p.switchDrawing(target);
+ assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);assert.equal(f.p.switching,false);
+});
+test('deleting source during a switch keeps the window hidden without reporting a stale save error',async()=>{
+ const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
+ f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{
+  f.files.delete(f.old.path);f.disk.delete(f.old.path);f.p.onDrawingDeleted(f.old.path);throw Error('ENOENT');
+ };
+ await f.p.switchDrawing(target);
+ assert.equal(f.p.hidden,true);assert.equal(reports,0);assert.equal(f.p.switching,false);assert.equal(f.p.settings.file,f.old.path);
+});
