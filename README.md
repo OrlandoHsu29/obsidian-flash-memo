@@ -9,9 +9,11 @@ A small floating Excalidraw canvas for quick sketches in Obsidian. Independent o
 - **Pin**: keep the canvas visible and above other windows. Esc still hides it.
 - **Close (×)**: save and hide the window, including when pinned. Reopen it to continue on the same canvas.
 - Drag the title bar to move the window. Resize normally; position and size are remembered.
+- The title bar shows the canvas file name. Click it to rename; Enter saves, Esc cancels, and the drawing extension is preserved.
+- The left wordmark reads **Flash memo** in the system font **Segoe Script**, with cursive fallbacks when unavailable. No font files are bundled.
 - **Archive button**: after confirmation, save and timestamp the current canvas, then switch the same window to a new blank canvas.
 
-Install and enable [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) first. Flash Memo creates `Flash Memo/Quick sketch.excalidraw.md` on first use and reopens that same canvas. Excalidraw handles editing and autosave; Flash Memo requests a save before hiding. Drawings can be embedded into any note with `![[...]]`, including Blo Editor notes. Disabling Flash Memo leaves drawings intact.
+Install and enable [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin) first. Flash Memo creates `Flash Memo/Quick sketch 1.excalidraw.md` on first use and reopens that same canvas. New canvases start at number 1 and use the next available number on collisions; existing canvases keep their names. Excalidraw handles editing and autosave; Flash Memo requests a save before hiding. Drawings can be embedded into any note with `![[...]]`, including Blo Editor notes. Disabling Flash Memo leaves drawings intact.
 
 Desktop only. Window control uses the desktop popout's internal `electronWindow` interface, so future Obsidian updates may require adaptation. No drawing engine is bundled, and Floating Notes is not a dependency.
 

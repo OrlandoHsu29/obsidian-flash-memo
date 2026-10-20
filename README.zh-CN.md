@@ -9,9 +9,11 @@
 - **图钉**：固定后保持显示并置顶，仍可通过 Esc 隐藏。
 - **关闭（×）**：保存并隐藏窗口，固定时也可使用；再次呼出继续使用同一画板。
 - 拖动标题栏移动窗口，正常调整大小；自动记忆位置和尺寸。
+- 标题栏显示画板文件名，点击即可修改；Enter 保存，Esc 取消，自动保留画板扩展名。
+- 左侧字标为 **Flash memo**，使用系统字体 **Segoe Script**，不可用时回退到其他手写字体；不随插件分发字体文件。
 - **归档按钮**：二次确认后保存当前画板，按时间命名归档，并在同一窗口切换到新空白画板。
 
-需要先安装并启用 [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin)。首次呼出自动创建 `Flash Memo/Quick sketch.excalidraw.md`，之后反复打开同一画板。绘图和自动保存由 Excalidraw 负责，隐藏前请求保存。可通过 `![[...]]` 嵌入任意笔记，也适用于 Blo Editor。停用 Flash Memo 不会删除画板。
+需要先安装并启用 [Excalidraw](https://github.com/zsviczian/obsidian-excalidraw-plugin)。首次呼出自动创建 `Flash Memo/Quick sketch 1.excalidraw.md`，之后反复打开同一画板。新画板从编号 1 开始，重名时依次递增至可用编号，已有画板保留原名。绘图和自动保存由 Excalidraw 负责，隐藏前请求保存。可通过 `![[...]]` 嵌入任意笔记，也适用于 Blo Editor。停用 Flash Memo 不会删除画板。
 
 仅适用于桌面端。窗口控制使用桌面浮窗内部的 `electronWindow` 接口，后续 Obsidian 更新可能需要适配。插件不包含绘图引擎，也不依赖 Floating Notes。
 

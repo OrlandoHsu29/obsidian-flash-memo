@@ -10,6 +10,7 @@ import { GlobalHotkey, HotkeyStatus } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
 import { ArchiveConfirm } from './archive-confirm';
 import { archiveDrawing, availableDrawingPath, drawingFolder, ensureDrawingFolder } from './drawing-files';
+import { drawingName, renamedDrawingPath } from './drawing-name';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -77,6 +78,8 @@ export default class FlashMemo extends Plugin {
   private archiving = false;
   private archiveDialog: ArchiveConfirm | null = null;
   private archiveButton: HTMLButtonElement | null = null;
+  private nameButton: HTMLButtonElement | null = null;
+  private renaming = false;
   private globalHotkey = new GlobalHotkey(() => this.triggerToggle(), () => this.settingTab?.updateStatus());
 
   t(zh: string, en: string): string {
@@ -110,6 +113,7 @@ export default class FlashMemo extends Plugin {
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
       if (oldPath !== this.settings.file) return;
       this.settings.file = file.path;
+      this.updateName();
       if (!this.archiving) void this.saveData(this.settings);
     }));
     this.registerEvent(this.app.workspace.on('window-close', win => {
@@ -207,7 +211,7 @@ export default class FlashMemo extends Plugin {
     const folder = await ensureDrawingFolder(this.app, this.settings.folder);
     const content = await plugin.getBlankDrawing();
     const extension = plugin.settings?.compatibilityMode ? '.excalidraw' : '.excalidraw.md';
-    const path = availableDrawingPath(this.app, folder, 'Quick sketch', extension);
+    const path = availableDrawingPath(this.app, folder, 'Quick sketch', extension, undefined, true);
     const file = await this.app.vault.create(path, content);
     this.settings.file = file.path;
     await this.saveData(this.settings);
@@ -215,7 +219,7 @@ export default class FlashMemo extends Plugin {
   }
 
   async toggle() {
-    if (this.disposed || this.opening || this.archiving) return;
+    if (this.disposed || this.opening || this.archiving || this.renaming) return;
     if (this.alive()) {
       if (this.hidden || this.hiding) this.show();
       else await this.hide('escape');
@@ -283,18 +287,47 @@ export default class FlashMemo extends Plugin {
     }
     const bar = doc.createElement('div');
     bar.className = 'flash-memo-bar';
-    const title = bar.createSpan({text: this.t('速记画板', 'Quick canvas'), cls: 'flash-memo-title'});
+    const title = bar.createSpan({text: 'Flash memo', cls: 'flash-memo-title'});
     title.setAttribute('aria-hidden', 'true');
-    this.archiveButton = bar.createEl('button', {cls:'clickable-icon flash-memo-archive'});
+    const nameContainer = bar.createDiv({cls: 'flash-memo-name-container'});
+    this.nameButton = nameContainer.createEl('button', {cls: 'flash-memo-name'});
+    this.nameButton.setAttribute('aria-label', this.t('修改画板文件名', 'Rename canvas file'));
+    const nameInput = nameContainer.createEl('input', {cls: 'flash-memo-name-input', type: 'text'});
+    nameInput.hidden = true;
+    nameInput.setAttribute('aria-label', this.t('文件名（不含扩展名）', 'File name (without extension)'));
+    const finishEdit = () => { nameInput.hidden = true; if (this.nameButton) this.nameButton.hidden = false; };
+    const onRename = () => {
+      if (this.archiving || this.renaming) return;
+      nameInput.value = drawingName(this.settings.file).name;
+      this.nameButton!.hidden = true; nameInput.hidden = false;
+      nameInput.focus(); nameInput.select();
+    };
+    const onNameBlur = () => {
+      if (nameInput.hidden) return;
+      const value = nameInput.value;
+      finishEdit(); void this.renameDrawing(value);
+    };
+    const onNameKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== 'Escape') return;
+      event.preventDefault(); event.stopPropagation();
+      if (event.key === 'Enter') onNameBlur(); else finishEdit();
+      this.nameButton?.focus();
+    };
+    this.nameButton.addEventListener('click', onRename);
+    nameInput.addEventListener('blur', onNameBlur);
+    nameInput.addEventListener('keydown', onNameKey);
+    this.updateName();
+    const actions = bar.createDiv({cls: 'flash-memo-actions'});
+    this.archiveButton = actions.createEl('button', {cls:'clickable-icon flash-memo-archive'});
     setIcon(this.archiveButton, 'archive');
     const archiveLabel = this.t('归档并新建画板', 'Archive and create canvas');
     this.archiveButton.setAttribute('aria-label',archiveLabel);
     const onArchive = () => this.confirmArchive();
     this.archiveButton.addEventListener('click',onArchive);
-    this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
+    this.pinButton = actions.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
     const onPin = () => this.togglePin();
     this.pinButton.addEventListener('click', onPin);
-    const closeButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-close'});
+    const closeButton = actions.createEl('button', {cls: 'clickable-icon flash-memo-close'});
     setIcon(closeButton, 'x');
     closeButton.setAttribute('aria-label', this.t('关闭', 'Close'));
     const onClose = () => { void this.hide('close'); };
@@ -336,6 +369,9 @@ export default class FlashMemo extends Plugin {
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
       closeButton.removeEventListener('click', onClose);
+      this.nameButton?.removeEventListener('click', onRename); this.nameButton = null;
+      nameInput.removeEventListener('blur', onNameBlur);
+      nameInput.removeEventListener('keydown', onNameKey);
       this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
@@ -352,7 +388,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async hide(reason: 'blur' | 'escape' | 'close') {
-    if (!this.alive() || this.hidden || this.archiving || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) return;
+    if (!this.alive() || this.hidden || this.archiving || this.renaming || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) return;
     const generation = ++this.hideGeneration;
     this.hiding = true;
     try {
@@ -375,7 +411,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private confirmArchive() {
-    if (!this.alive() || this.disposed || this.archiving || this.archiveDialog) return;
+    if (!this.alive() || this.disposed || this.archiving || this.renaming || this.archiveDialog) return;
     try {
       const folder = drawingFolder(this.settings.folder);
       if (!folder) throw Error('invalid-folder');
@@ -386,7 +422,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async archiveCurrentDrawing() {
-    if (!this.alive() || this.disposed || this.archiving) return;
+    if (!this.alive() || this.disposed || this.archiving || this.renaming) return;
     const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
     if (!current || !view.forceSave) { this.report(Error(this.t('当前画板暂时无法保存，请稍后重试。','The current canvas cannot be saved yet. Try again shortly.'))); return; }
     this.archiving = true; this.archiveButton!.disabled = true;
@@ -403,6 +439,7 @@ export default class FlashMemo extends Plugin {
       await this.saveData(this.settings);
       if (!this.disposed && this.alive() && this.leaf === leaf) {
         await leaf.setViewState({type:'excalidraw',state:{file:result.fresh.path},active:true});
+        this.updateName();
         this.show();
       }
       if (!this.disposed) this.settingTab?.display();
@@ -415,6 +452,41 @@ export default class FlashMemo extends Plugin {
       this.archiving = false;
       if (this.archiveButton) this.archiveButton.disabled = false;
       if (this.alive() && !this.settings.pinned && !this.native!.isFocused()) void this.hide('blur');
+    }
+  }
+
+  private updateName() {
+    if (this.nameButton) this.nameButton.setText(drawingName(this.settings.file).name || this.t('速记画板', 'Quick canvas'));
+  }
+
+  private async renameDrawing(value: string) {
+    if (!this.alive() || this.disposed || this.archiving || this.renaming) return;
+    const view = this.leaf!.view as DrawingView, file = view.file;
+    if (!file) return;
+    let renamed = false;
+    try {
+      const target = renamedDrawingPath(file.path, value);
+      if (target === file.path) return;
+      const existing = this.app.vault.getAbstractFileByPath(target);
+      if (existing && existing !== file) throw Error(this.t('已有同名文件或文件夹，请使用其他名称。', 'A file or folder with that name already exists. Choose another name.'));
+      if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
+      this.renaming = true;
+      this.hideGeneration++; this.hiding = false; this.clearBlur();
+      this.nameButton!.disabled = true;
+      await view.forceSave();
+      if (this.disposed || !this.alive() || this.leaf!.view !== view) return;
+      await this.app.fileManager.renameFile(file, target);
+      this.settings.file = file.path;
+      await this.saveData(this.settings);
+      renamed = true;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'invalid-drawing-name') this.report(Error(this.t('请输入有效文件名，不要包含路径或特殊字符。', 'Enter a valid file name without a path or special characters.')));
+      else this.report(error);
+    } finally {
+      this.renaming = false;
+      if (this.nameButton) this.nameButton.disabled = false;
+      this.updateName();
+      if (renamed && this.alive() && !this.native!.isFocused()) void this.hide('blur');
     }
   }
 

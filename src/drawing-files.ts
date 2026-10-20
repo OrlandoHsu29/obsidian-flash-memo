@@ -17,9 +17,9 @@ export async function ensureDrawingFolder(app: App, value: string): Promise<stri
   return folder;
 }
 
-export function availableDrawingPath(app:App,folder:string,stem:string,extension:string,ignore?:TFile):string {
+export function availableDrawingPath(app:App,folder:string,stem:string,extension:string,ignore?:TFile,numbered=false):string {
   for(let n=1;;n++){
-    const path=`${folder}/${stem}${n===1?'':` ${n}`}${extension}`;
+    const path=`${folder}/${stem}${n===1&&!numbered?'':` ${n}`}${extension}`;
     const existing=app.vault.getAbstractFileByPath(path);
     if(!existing||existing===ignore)return path;
   }
@@ -32,7 +32,7 @@ export async function archiveDrawing(app:App,current:TFile,folder:string,blank:s
   const extension=current.path.endsWith('.excalidraw.md')?'.excalidraw.md':'.excalidraw';
   const stamp=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-')+' '+[date.getHours(),date.getMinutes(),date.getSeconds()].map(n=>String(n).padStart(2,'0')).join('-');
   const archivePath=availableDrawingPath(app,target,`Sketch ${stamp}`,extension);
-  const freshPath=availableDrawingPath(app,target,'Quick sketch',freshExtension??extension,current);
+  const freshPath=availableDrawingPath(app,target,'Quick sketch',freshExtension??extension,current,true);
   const original=current.path;
   await app.fileManager.renameFile(current,archivePath);
   try {
