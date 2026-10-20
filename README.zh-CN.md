@@ -8,7 +8,9 @@
 
 <p align="center"><a href="README.md">English</a> · 简体中文</p>
 
-![Flash Memo 速记浮窗与示例画板](docs/images/overview.png)
+![Flash Memo 以小浮窗叠放在项目 GitHub 页面上](docs/images/browser-preview.png)
+
+*浏览器整窗实拍：Flash Memo 作为独立的小画板悬浮在项目页面上方。*
 
 按一下快捷键打开画板，画图或写字，点击其他位置即可保存并隐藏。下次唤起，继续使用同一张画板。所有画板都是笔记库里的普通 Excalidraw 文件，可以直接打开，也可以嵌入笔记。
 
@@ -40,6 +42,8 @@
 ## 使用方式
 
 ### 显示、隐藏与固定
+
+![速记浮窗与操作按钮的近景](docs/images/overview.png)
 
 | 操作 | 效果 |
 | --- | --- |
