@@ -17,6 +17,8 @@ interface DesktopWindow {
   isDestroyed(): boolean;
   show(): void;
   hide(): void;
+  getOpacity?(): number;
+  setOpacity?(opacity: number): void;
   focus(): void;
   isFocused(): boolean;
   setAlwaysOnTop(value: boolean): void;
@@ -44,11 +46,12 @@ interface MemoSettings {
   file: string;
   leafId: string;
   pinned: boolean;
+  hideOnBlur: boolean;
   bounds: Bounds | null;
   globalHotkeyEnabled: boolean;
   globalHotkey: string;
 }
-const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
+const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, hideOnBlur: true, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
 
 export default class FlashMemo extends Plugin {
   settings: MemoSettings = { ...DEFAULTS };
@@ -56,6 +59,7 @@ export default class FlashMemo extends Plugin {
   private popout: WorkspaceWindow | null = null;
   private native: DesktopWindow | null = null;
   private hidden = false;
+  private hiddenOpacity: number | null = null;
   private opening = false;
   private disposed = false;
   private hideGeneration = 0;
@@ -290,15 +294,20 @@ export default class FlashMemo extends Plugin {
     this.pinButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
     const onPin = () => this.togglePin();
     this.pinButton.addEventListener('click', onPin);
+    const closeButton = bar.createEl('button', {cls: 'clickable-icon flash-memo-close'});
+    setIcon(closeButton, 'x');
+    closeButton.setAttribute('aria-label', this.t('关闭', 'Close'));
+    const onClose = () => { void this.hide('close'); };
+    closeButton.addEventListener('click', onClose);
     doc.body.append(bar);
     this.updatePin();
     const onBlur = () => {
       this.clearBlur();
-      if (this.settings.pinned || this.hidden) return;
+      if (!this.settings.hideOnBlur || this.settings.pinned || this.hidden) return;
       this.blurTimer = setTimeout(() => {
         this.blurTimer = null;
         if (!native!.isDestroyed() && !native!.isFocused()) void this.hide('blur');
-      }, 180);
+      }, 0);
     };
     const onFocus = () => { this.clearBlur(); this.hideGeneration++; this.hiding = false; };
     const onBounds = () => {
@@ -326,6 +335,7 @@ export default class FlashMemo extends Plugin {
       native!.off('resize', onBounds); native!.off('moved', onBounds);
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
+      closeButton.removeEventListener('click', onClose);
       this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
@@ -336,12 +346,13 @@ export default class FlashMemo extends Plugin {
     this.hideGeneration++; this.hiding = false; this.clearBlur();
     this.hidden = false;
     this.keepRendererAwake();
+    this.restoreWindowOpacity();
     this.native!.show();
     this.native!.focus();
   }
 
-  private async hide(reason: 'blur' | 'escape') {
-    if (!this.alive() || this.hidden || this.archiving || (reason === 'blur' && this.settings.pinned)) return;
+  private async hide(reason: 'blur' | 'escape' | 'close') {
+    if (!this.alive() || this.hidden || this.archiving || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) return;
     const generation = ++this.hideGeneration;
     this.hiding = true;
     try {
@@ -349,11 +360,17 @@ export default class FlashMemo extends Plugin {
       if (!view.forceSave) throw Error(this.t('当前 Excalidraw 版本不支持保存接口，请更新插件。', 'Please update Excalidraw: its save interface is unavailable.'));
       await view.forceSave();
       if (generation !== this.hideGeneration || !this.alive()) return;
-      if (reason === 'blur' && (this.settings.pinned || this.native!.isFocused())) return;
+      if (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned || this.native!.isFocused())) return;
+      // Make the saved canvas disappear before Windows animates the native hide.
+      if (reason === 'blur' && process.platform === 'win32' && this.native!.setOpacity) {
+        const opacity = this.native!.getOpacity?.() ?? 1;
+        this.native!.setOpacity(0);
+        this.hiddenOpacity = opacity;
+      }
       this.hidden = true;
       this.native!.hide();
       this.restoreThrottling();
-    } catch (error) { this.report(error); }
+    } catch (error) { this.restoreWindowOpacity(); this.report(error); }
     finally { if (generation === this.hideGeneration) this.hiding = false; }
   }
 
@@ -420,6 +437,11 @@ export default class FlashMemo extends Plugin {
     button.classList.toggle('is-active', this.settings.pinned);
   }
 
+  private restoreWindowOpacity() {
+    if (this.hiddenOpacity === null) return;
+    if (this.native && !this.native.isDestroyed()) this.native.setOpacity?.(this.hiddenOpacity);
+    this.hiddenOpacity = null;
+  }
   private clearBlur() { if (this.blurTimer) clearTimeout(this.blurTimer); this.blurTimer = null; }
   private keepRendererAwake() {
     if (this.wakeContents) return;
@@ -437,6 +459,7 @@ export default class FlashMemo extends Plugin {
     this.wakeContents = null; this.previousThrottling = null;
   }
   private reset() {
+    this.restoreWindowOpacity();
     this.hideGeneration++; this.hiding = false; this.clearBlur();
     if (this.boundsTimer) clearTimeout(this.boundsTimer);
     this.boundsTimer = null;
@@ -457,7 +480,7 @@ export default class FlashMemo extends Plugin {
     this.archiveDialog?.close();
     this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
-    if (this.alive()) { this.native!.show(); this.native!.setAlwaysOnTop(false); }
+    if (this.alive()) { this.restoreWindowOpacity(); this.native!.show(); this.native!.setAlwaysOnTop(false); }
     this.reset();
   }
 }
@@ -470,6 +493,13 @@ class MemoSettingTab extends PluginSettingTab {
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
+    new Setting(containerEl)
+      .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
+      .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))
+      .addToggle(toggle => toggle.setValue(p.settings.hideOnBlur).onChange(async value => {
+        p.settings.hideOnBlur = value;
+        await p.saveData(p.settings);
+      }));
     const supported = process.platform === 'win32' && process.arch === 'x64';
     new Setting(containerEl)
       .setName(p.t('系统全局快捷键', 'System-wide shortcut'))

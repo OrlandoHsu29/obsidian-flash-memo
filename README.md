@@ -5,8 +5,9 @@ A small floating Excalidraw canvas for quick sketches in Obsidian. Independent o
 - **Ctrl/Cmd + Shift + Y**: show/hide the canvas. Change this in Obsidian → Hotkeys → Flash Memo.
 - **Ctrl + Alt + Y (Windows)**: system-wide shortcut, configurable in Flash Memo settings.
 - **Esc**: hide the window. Close drawing menus or finish text editing first.
-- **Click elsewhere**: automatically hide after a short delay.
+- **Click elsewhere**: save and hide immediately, without an exit animation. Enabled by default; turn off **Hide on focus loss** in Flash Memo settings to keep the canvas visible.
 - **Pin**: keep the canvas visible and above other windows. Esc still hides it.
+- **Close (×)**: save and hide the window, including when pinned. Reopen it to continue on the same canvas.
 - Drag the title bar to move the window. Resize normally; position and size are remembered.
 - **Archive button**: after confirmation, save and timestamp the current canvas, then switch the same window to a new blank canvas.
 
