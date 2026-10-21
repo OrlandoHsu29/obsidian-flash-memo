@@ -3,13 +3,14 @@ const assert=require('node:assert/strict');
 const {buildSync}=require('esbuild');
 const Module=require('node:module');
 class Base {}
+class FakeWorkspaceWindow {}
 class FakeModal {
  constructor(){this.scope={register(){}};this.contentEl={empty(){}};this.opens=0;}
  open(){this.opens++;}
  close(){this.onClose?.();}
 }
 const loaded=new Module('flash-memo-test.cjs');
-loaded.require=id=>id==='obsidian'?{Plugin:Base,PluginSettingTab:Base,Modal:FakeModal}:require(id);
+loaded.require=id=>id==='obsidian'?{Plugin:Base,PluginSettingTab:Base,Modal:FakeModal,WorkspaceWindow:FakeWorkspaceWindow}:require(id);
 loaded._compile(buildSync({entryPoints:['src/main.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text,'flash-memo-test.cjs');
 const FlashMemo=loaded.exports.default;
 
@@ -18,7 +19,8 @@ function fixture(){
  const disk=new Set([old.path]);let creates=0,shows=0,hides=0,opens=0;
  const native={isDestroyed:()=>false,isFocused:()=>false,setAlwaysOnTop(){},hide(){hides++;}};
  const leaf={id:'test-leaf',view:{file:old},async setViewState(state){this.view={file:files.get(state.state.file)};},detach(){}};
- p.app={vault:{adapter:{exists:async path=>disk.has(path)},getFileByPath:path=>files.get(path),getAbstractFileByPath:path=>files.get(path),async create(path){creates++;const file={path};files.set(path,file);disk.add(path);return file;}},workspace:{getLeaf(){opens++;return leaf;}}};
+ const requestSaveLayout=()=>{};requestSaveLayout.run=async()=>{};
+ p.app={vault:{adapter:{exists:async path=>disk.has(path)},getFileByPath:path=>files.get(path),getAbstractFileByPath:path=>files.get(path),async create(path){creates++;const file={path};files.set(path,file);disk.add(path);return file;}},workspace:{requestSaveLayout,getLeaf(){opens++;return leaf;}}};
  p.settings.file=old.path;p.leaf=leaf;p.native=native;p.hidden=true;
  p.t=(_zh,en)=>en;
  p.drawingPlugin=()=>({getBlankDrawing:async()=> 'blank'});
@@ -275,4 +277,93 @@ test('showing with auto-hide disabled does not prepare a temporary topmost layer
  const f=fixture();f.p.settings.hideOnBlur=false;
  f.p.native.setAlwaysOnTop=()=>assert.fail('Auto-hide is disabled');f.p.native.show=()=>{};f.p.native.focus=()=>{};
  FlashMemo.prototype.show.call(f.p);assert.equal(f.p.hideLayerHeld,false);
+});
+
+function restorationFixture(){
+ const f=fixture(),native=f.p.native,container=new FakeWorkspaceWindow(),saved=[];
+ container.win={electronWindow:native};f.leaf.getContainer=()=>container;
+ f.leaf.getViewState=()=>({type:'excalidraw',state:{file:f.old.path}});
+ f.p.leaf=null;f.p.native=null;f.p.settings.leafId='';f.p.hidden=false;
+ f.p.app.workspace.iterateAllLeaves=callback=>[f.leaf].forEach(callback);
+ f.p.saveData=async settings=>saved.push({...settings});
+ return {...f,native,container,saved};
+}
+
+test('startup recovers a unique dedicated drawing popout when the saved leaf ID is missing',async()=>{
+ const f=restorationFixture();let saves=0;f.leaf.view.forceSave=async()=>{saves++;};
+ await f.p.restoreDrawingWindow();
+ assert.equal(f.p.leaf,f.leaf);assert.equal(f.p.hidden,true);assert.equal(f.p.settings.leafId,f.leaf.id);
+ assert.equal(f.saved.at(-1).leafId,f.leaf.id);assert.equal(saves,0);assert.equal(f.counts().hides,2);
+});
+
+test('startup keeps pinned drawings hidden and does not require the editor save API yet',async()=>{
+ const f=restorationFixture();f.p.settings.pinned=true;
+ await f.p.restoreDrawingWindow();assert.equal(f.p.hidden,true);assert.equal(f.p.settings.pinned,true);
+});
+
+test('startup ignores main tabs, other drawings, shared popouts and ambiguous duplicate windows',async()=>{
+ for(const mode of ['main','other-file','shared','duplicate']){
+  const f=restorationFixture();let leaves=[f.leaf];
+  if(mode==='main')f.leaf.getContainer=()=>({});
+  if(mode==='other-file')f.leaf.getViewState=()=>({type:'excalidraw',state:{file:'Elsewhere/Other.excalidraw.md'}});
+  if(mode==='shared')leaves.push({getContainer:()=>f.container,getViewState:()=>({type:'markdown',state:{file:'Other.md'}})});
+  if(mode==='duplicate'){
+   const other=new FakeWorkspaceWindow();other.win={electronWindow:f.native};
+   leaves.push({...f.leaf,id:'another-leaf',getContainer:()=>other});
+  }
+  f.p.app.workspace.iterateAllLeaves=callback=>leaves.forEach(callback);
+  await f.p.restoreDrawingWindow();assert.equal(f.p.leaf,null,mode);assert.equal(f.counts().hides,0,mode);
+ }
+});
+
+test('a matching saved leaf ID disambiguates restored windows for the same drawing',async()=>{
+ const f=restorationFixture(),other=new FakeWorkspaceWindow();other.win={electronWindow:f.native};
+ const duplicate={...f.leaf,id:'duplicate',getContainer:()=>other};f.p.settings.leafId=f.leaf.id;
+ f.p.app.workspace.iterateAllLeaves=callback=>[duplicate,f.leaf].forEach(callback);
+ await f.p.restoreDrawingWindow();assert.equal(f.p.leaf,f.leaf);
+});
+
+test('quit saves the drawing without redundant tab teardown or settings/layout writes',async()=>{
+ const f=fixture(),order=[];f.p.settings.leafId=f.leaf.id;
+ f.leaf.view.forceSave=async()=>order.push('save');f.leaf.detach=()=>assert.fail('Quit must not detach the tab');
+ f.p.saveData=async()=>assert.fail('Quit must not rewrite settings');
+ f.p.app.workspace.requestSaveLayout=()=>assert.fail('Quit must not rewrite layout');
+ await f.p.prepareQuit();
+ assert.deepEqual(order,['save']);assert.equal(f.p.leaf,f.leaf);assert.equal(f.p.settings.leafId,f.leaf.id);
+ assert.equal(f.p.settings.file,f.old.path);assert.ok(f.files.has(f.old.path));
+});
+
+test('failed quit save leaves the drawing and window intact',async()=>{
+ const f=fixture();let reports=0;f.leaf.detach=()=>assert.fail('Must not detach unsaved drawing');
+ f.leaf.view.forceSave=async()=>{throw Error('Disk full');};f.p.report=()=>{reports++;};
+ await assert.rejects(f.p.prepareQuit(),/Disk full/);
+ assert.equal(f.p.leaf,f.leaf);assert.equal(f.p.quitting,false);assert.equal(reports,1);
+});
+
+test('the first shortcut waits for startup restoration instead of creating a second popout',async()=>{
+ const f=fixture();let finish;f.p.startupRestore=new Promise(resolve=>{finish=resolve;});
+ const opening=f.p.toggle();await Promise.resolve();assert.equal(f.counts().shows,0);
+ finish();await opening;assert.equal(f.counts().shows,1);assert.equal(f.counts().opens,0);
+});
+
+test('saved workspace excludes the memo popout and normal disable restores the layout provider',()=>{
+ const f=fixture(),cleanup=[],layout={floating:{type:'floating',children:[{type:'window',children:[{type:'leaf',id:f.leaf.id}]}]}};
+ const original=()=>layout;f.p.app.workspace.getLayout=original;f.p.register=fn=>cleanup.push(fn);
+ f.p.filterSavedLayout();assert.equal(f.p.app.workspace.getLayout().floating,undefined);
+ assert.equal(layout.floating.children.length,1);cleanup[0]();assert.equal(f.p.app.workspace.getLayout,original);
+});
+
+test('layout cleanup does not overwrite another plugin wrapper and becomes inactive after disable',()=>{
+ const f=fixture(),cleanup=[],layout={floating:{children:[{type:'window',children:[{type:'leaf',id:f.leaf.id}]}]}};
+ f.p.app.workspace.getLayout=()=>layout;f.p.register=fn=>cleanup.push(fn);f.p.filterSavedLayout();
+ const filtered=f.p.app.workspace.getLayout,other=()=>filtered();f.p.app.workspace.getLayout=other;
+ cleanup[0]();assert.equal(f.p.app.workspace.getLayout,other);assert.equal(other(),layout);
+});
+
+test('final quit layout still excludes the owned window after controller reset',()=>{
+ const f=fixture(),cleanup=[],layout={floating:{children:[{type:'window',children:[{type:'leaf',id:f.leaf.id}]}]}};
+ f.p.settings.leafId=f.leaf.id;
+ f.p.app.workspace.getLayout=()=>layout;f.p.register=fn=>cleanup.push(fn);f.p.filterSavedLayout();
+ f.p.quitting=true;f.p.reset();cleanup[0]();
+ assert.equal(f.p.app.workspace.getLayout().floating,undefined);
 });

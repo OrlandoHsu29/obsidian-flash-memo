@@ -55,6 +55,8 @@ When updating, disable the global shortcut and then the plugin before replacing 
 
 Turn off **Hide on focus loss** if you prefer the canvas to stay visible. Drawing menus and text editing receive Esc first; finish editing or close the menu before using Esc to hide the window.
 
+Flash Memo's own popout is excluded from saved workspace layouts, so starting Obsidian does not recreate it, including when pinned. During normal exit, Flash Memo also requests a final drawing save; use the shortcut to reopen it next time.
+
 Excalidraw handles drawing and autosave. Flash Memo also requests a save before hiding or switching drawings. It keeps the main renderer awake while the canvas is visible and during saving, including when the main window is minimized, then restores its previous background throttling setting.
 
 ### Switch drawings and rename

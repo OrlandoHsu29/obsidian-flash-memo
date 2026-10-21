@@ -16,6 +16,7 @@ import { CanvasError } from './canvas-error';
 import { TrayIntegration, TrayPluginManager } from './tray-integration';
 import { WindowFade } from './window-fade';
 import { SettingsStore } from './settings-store';
+import { withoutMemoPopout } from './workspace-layout';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -70,6 +71,8 @@ export default class FlashMemo extends Plugin {
   private windowFade = new WindowFade();
   private hideLayerHeld = false;
   private opening = false;
+  private startupRestore: Promise<void> | null = null;
+  private quitting = false;
   private settingsStore: SettingsStore | null = null;
   private disposed = false;
   private hideGeneration = 0;
@@ -124,6 +127,7 @@ export default class FlashMemo extends Plugin {
 
   async onload() {
     this.settings = { ...DEFAULTS, ...await this.loadData() };
+    this.filterSavedLayout();
     this.addCommand({
       id: 'toggle', name: this.t('显示/隐藏速记画板', 'Show/hide quick canvas'),
       callback: () => this.triggerToggle(),
@@ -158,20 +162,96 @@ export default class FlashMemo extends Plugin {
       this.settings.leafId = '';
       void this.saveData(this.settings).catch(error => this.report(error));
     }));
+    this.registerEvent(this.app.workspace.on('quit', tasks => {
+      tasks.addPromise(this.prepareQuit());
+    }));
     this.app.workspace.onLayoutReady(() => {
       if (this.disposed) return;
       void this.configureGlobalHotkey().then(success => {
         if (!success && this.settings.globalHotkeyEnabled && !this.disposed) new Notice(this.hotkeyDescription());
       }).catch(error => this.report(error));
-      if (!this.settings.leafId) return;
-      let restored: WorkspaceLeaf | null = null;
-      this.app.workspace.iterateAllLeaves(leaf => {
-        if ((leaf as WorkspaceLeaf & { id: string }).id === this.settings.leafId) restored = leaf;
-      });
-      if (restored) void this.attach(restored).then(() => {
-        if (!this.settings.pinned) return this.hide('escape');
-      }).catch(error => this.report(error, true));
+      const restoring = this.restoreDrawingWindow().catch(error => this.report(error));
+      this.startupRestore = restoring;
+      void restoring.finally(() => { if (this.startupRestore === restoring) this.startupRestore = null; });
     });
+  }
+
+  private filterSavedLayout() {
+    const plugin = this, workspace = this.app.workspace, original = workspace.getLayout;
+    let enabled = true;
+    const filtered: typeof original = function (this: typeof workspace) {
+      const layout = original.call(this);
+      const owned = (plugin.leaf as WorkspaceLeaf & { id: string } | null)?.id
+        || plugin.settings.leafId;
+      return enabled ? withoutMemoPopout(layout, owned) : layout;
+    };
+    workspace.getLayout = filtered;
+    this.register(() => {
+      // Keep filtering through final shutdown even if asynchronous quit cleanup
+      // is interrupted. Normal plugin disable restores the original behavior.
+      if (this.quitting) return;
+      enabled = false;
+      if (workspace.getLayout === filtered) workspace.getLayout = original;
+      workspace.requestSaveLayout();
+    });
+  }
+
+  private async restoreDrawingWindow() {
+    if (this.disposed || this.alive() || !this.settings.file) return;
+    const leaves: WorkspaceLeaf[] = [];
+    this.app.workspace.iterateAllLeaves(leaf => leaves.push(leaf));
+    const candidates = leaves.filter(leaf => {
+      const container = leaf.getContainer();
+      if (!(container instanceof WorkspaceWindow)) return false;
+      // Never take over main-window tabs or a popout containing other tabs.
+      if (leaves.filter(other => other.getContainer() === container).length !== 1) return false;
+      const state = leaf.getViewState();
+      return state.type === 'excalidraw' && state.state?.file === this.settings.file;
+    });
+    const restored = candidates.find(leaf => (leaf as WorkspaceLeaf & { id: string }).id === this.settings.leafId)
+      ?? (candidates.length === 1 ? candidates[0] : undefined);
+    if (!restored) return;
+    const native = ((restored.getContainer() as WorkspaceWindow).win as Window & { electronWindow?: DesktopWindow }).electronWindow;
+    this.hidden = true;
+    try {
+      // Startup only restores saved content; do not wait for Excalidraw to save
+      // or show a pinned canvas before its editor has finished loading.
+      if (native && !native.isDestroyed()) native.hide();
+      await this.attach(restored);
+      if (this.disposed || !this.alive()) return;
+      this.native!.hide();
+      this.restoreThrottling();
+      this.settings.leafId = (restored as WorkspaceLeaf & { id: string }).id;
+      await this.saveData(this.settings);
+      this.app.workspace.requestSaveLayout();
+      await this.app.workspace.requestSaveLayout.run();
+    } catch (error) {
+      this.reset();
+      if (!this.disposed && native && !native.isDestroyed()) native.show();
+      throw error;
+    }
+  }
+
+  private async prepareQuit() {
+    if (this.quitting) return;
+    this.quitting = true;
+    try {
+      if (this.startupRestore) await this.startupRestore;
+      const leaf = this.leaf;
+      if (!this.alive() || !leaf) return;
+      this.keepRendererAwake();
+      if (this.settings.file && await this.app.vault.adapter.exists(this.settings.file)) {
+        const view = leaf.view as DrawingView;
+        if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
+        await view.forceSave();
+      }
+      // Layout filtering already excludes the popout. Do not tear down tabs or
+      // start another settings/layout write during application shutdown.
+    } catch (error) {
+      this.quitting = false;
+      this.report(error, true);
+      throw error;
+    }
   }
 
   private triggerToggle() {
@@ -276,6 +356,8 @@ export default class FlashMemo extends Plugin {
   }
 
   async toggle() {
+    if (this.startupRestore) await this.startupRestore;
+    if (this.quitting) return;
     if (this.errorClosing) return;
     if (this.errorDialog) { this.show(); return; }
     if (this.disposed || this.opening || this.archiving || this.renaming || this.switching) return;
@@ -493,6 +575,7 @@ export default class FlashMemo extends Plugin {
       this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
+    this.app.workspace.requestSaveLayout();
   }
 
   private show() {
@@ -507,7 +590,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private runWindowAction(action: () => void | Promise<void>) {
-    if (this.disposed || this.errorClosing) return;
+    if (this.disposed || this.quitting || this.errorClosing) return;
     try { void Promise.resolve(action()).catch(error => this.report(error, true)); }
     catch (error) { this.report(error, true); }
   }
@@ -837,7 +920,11 @@ export default class FlashMemo extends Plugin {
     this.archiveDialog?.close();
     this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
-    if (this.alive()) { this.restoreWindowOpacity(); this.native!.show(); this.native!.setAlwaysOnTop(false); }
+    if (this.alive()) {
+      this.restoreWindowOpacity();
+      if (!this.quitting) this.native!.show();
+      this.native!.setAlwaysOnTop(false);
+    }
     this.reset();
   }
 }
