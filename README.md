@@ -37,7 +37,7 @@ Flash Memo requires **Obsidian desktop 1.10.0 or later** and the [Excalidraw com
 
 On first use, Flash Memo creates `Flash Memo/Quick sketch 1.excalidraw.md`. It then reopens the current drawing. New drawings use the next available number on name collisions; existing names are preserved.
 
-When updating, disable the global shortcut and then the plugin before replacing runtime files. Preserve your `data.json`, then enable the plugin again.
+When updating, disable the global shortcut and then the plugin before replacing runtime files. Preserve your `data.json` and its `data.json.bak` backup, then enable the plugin again.
 
 ## Using Flash Memo
 
@@ -120,6 +120,7 @@ Restoring Obsidian from Tray keeps hidden Flash Memo canvases hidden. Hiding a v
 
 ## Recovery and compatibility
 
+- Settings are written to a temporary file and replaced only after writing completes. A valid previous copy is kept in `data.json.bak`; damaged settings are recovered from a valid backup instead of silently resetting your drawing and shortcut.
 - If the current drawing is deleted, its window hides automatically without trying to save the deleted file. Reopening Flash Memo creates a new numbered drawing.
 - If a save or another canvas operation fails, an error dialog offers **Confirm and close**. This closes the faulty window without retrying the failed save. Saved files remain; unsaved changes may be lost. Reopen Flash Memo to return to the saved drawing. Filename validation errors remain notices so you can correct them.
 - Preview screenshots were captured on Windows x64 with Obsidian **1.14.4** and Excalidraw **2.29.0**. Tray integration was tested with **Tray 0.3.5**. Other desktop platforms have not been verified.

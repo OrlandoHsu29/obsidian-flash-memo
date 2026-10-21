@@ -15,6 +15,7 @@ import { DrawingPicker } from './drawing-picker';
 import { CanvasError } from './canvas-error';
 import { TrayIntegration, TrayPluginManager } from './tray-integration';
 import { WindowFade } from './window-fade';
+import { SettingsStore } from './settings-store';
 
 interface Bounds { x: number; y: number; width: number; height: number }
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
@@ -69,6 +70,7 @@ export default class FlashMemo extends Plugin {
   private windowFade = new WindowFade();
   private hideLayerHeld = false;
   private opening = false;
+  private settingsStore: SettingsStore | null = null;
   private disposed = false;
   private hideGeneration = 0;
   private hiding = false;
@@ -101,6 +103,23 @@ export default class FlashMemo extends Plugin {
 
   t(zh: string, en: string): string {
     return (window.localStorage.getItem('language') ?? navigator.language).toLowerCase().startsWith('zh') ? zh : en;
+  }
+
+  private getSettingsStore() {
+    if (this.settingsStore) return this.settingsStore;
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir) throw Error('Flash Memo requires a desktop vault.');
+    return this.settingsStore = new SettingsStore(join(adapter.getBasePath(), this.manifest.dir, 'data.json'));
+  }
+
+  async loadData() {
+    const saved = await this.getSettingsStore().load();
+    if (saved.recovered) new Notice(this.t('Flash Memo 设置文件异常，已从有效备份恢复。', 'Flash Memo settings were damaged and have been restored from a valid backup.'));
+    return saved.data;
+  }
+
+  async saveData(data: unknown) {
+    await this.getSettingsStore().save(data);
   }
 
   async onload() {
