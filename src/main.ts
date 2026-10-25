@@ -8,8 +8,8 @@ import { setTimeout, clearTimeout } from 'node:timers';
 import { join } from 'node:path';
 import { GlobalHotkey, HotkeyStatus, localHotkey } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
-import { ArchiveConfirm } from './archive-confirm';
-import { archiveDrawing, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
+import { NewCanvasConfirm } from './new-canvas-confirm';
+import { createDrawing, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
 import { drawingName, renamedDrawingPath } from './drawing-name';
 import { DrawingPicker } from './drawing-picker';
 import { CanvasError } from './canvas-error';
@@ -88,9 +88,9 @@ export default class FlashMemo extends Plugin {
   private recorder: HotkeyRecorder | null = null;
   private recording = false;
   private localHotkeyHandler: KeymapEventHandler | null = null;
-  private archiving = false;
-  private archiveDialog: ArchiveConfirm | null = null;
-  private archiveButton: HTMLButtonElement | null = null;
+  private creatingCanvas = false;
+  private newCanvasDialog: NewCanvasConfirm | null = null;
+  private newCanvasButton: HTMLButtonElement | null = null;
   private nameButton: HTMLButtonElement | null = null;
   private renaming = false;
   private cancelNameEdit: (() => void) | null = null;
@@ -153,7 +153,7 @@ export default class FlashMemo extends Plugin {
       if (oldPath !== this.settings.file) return;
       this.settings.file = file.path;
       this.updateName();
-      if (!this.archiving) void this.saveData(this.settings).catch(error => this.report(error, true));
+      if (!this.creatingCanvas) void this.saveData(this.settings).catch(error => this.report(error, true));
     }));
     this.registerEvent(this.app.vault.on('delete', file => this.onDrawingDeleted(file.path)));
     this.registerEvent(this.app.workspace.on('window-close', win => {
@@ -360,7 +360,7 @@ export default class FlashMemo extends Plugin {
     if (this.quitting) return;
     if (this.errorClosing) return;
     if (this.errorDialog) { this.show(); return; }
-    if (this.disposed || this.opening || this.archiving || this.renaming || this.switching) return;
+    if (this.disposed || this.opening || this.creatingCanvas || this.renaming || this.switching) return;
     this.opening = true;
     let created: WorkspaceLeaf | null = null;
     try {
@@ -454,7 +454,7 @@ export default class FlashMemo extends Plugin {
       return files;
     }, () => this.settings.file, file => this.runWindowAction(() => this.switchDrawing(file)), (zh, en) => this.t(zh, en));
     const onRename = () => this.runWindowAction(() => {
-      if (this.errorDialog || this.archiving || this.renaming || this.switching) return;
+      if (this.errorDialog || this.creatingCanvas || this.renaming || this.switching) return;
       this.drawingPicker?.hide();
       nameInput.value = drawingName(this.settings.file).name;
       this.nameButton!.hidden = true; nameInput.hidden = false;
@@ -472,7 +472,7 @@ export default class FlashMemo extends Plugin {
       this.nameButton?.focus();
     };
     const onNameClick = (event: MouseEvent) => this.runWindowAction(() => {
-      if (event.detail > 1 || this.errorDialog || this.archiving || this.renaming || this.switching) return;
+      if (event.detail > 1 || this.errorDialog || this.creatingCanvas || this.renaming || this.switching) return;
       this.drawingPicker?.toggle();
     });
     const onNameButtonKey = (event: KeyboardEvent) => this.runWindowAction(() => {
@@ -490,12 +490,12 @@ export default class FlashMemo extends Plugin {
     nameInput.addEventListener('keydown', onNameKey);
     this.updateName();
     const actions = bar.createDiv({cls: 'flash-memo-actions'});
-    this.archiveButton = actions.createEl('button', {cls:'clickable-icon flash-memo-archive'});
-    setIcon(this.archiveButton, 'archive');
-    const archiveLabel = this.t('归档并新建画板', 'Archive and create canvas');
-    this.archiveButton.setAttribute('aria-label',archiveLabel);
-    const onArchive = () => this.runWindowAction(() => this.confirmArchive());
-    this.archiveButton.addEventListener('click',onArchive);
+    this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon flash-memo-new-canvas'});
+    setIcon(this.newCanvasButton, 'file-plus');
+    const newCanvasLabel = this.t('新建画板', 'Create a new canvas');
+    this.newCanvasButton.setAttribute('aria-label',newCanvasLabel);
+    const onNewCanvas = () => this.runWindowAction(() => this.confirmNewCanvas());
+    this.newCanvasButton.addEventListener('click',onNewCanvas);
     this.pinButton = actions.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
     const onPin = () => this.runWindowAction(() => this.togglePin());
     this.pinButton.addEventListener('click', onPin);
@@ -513,7 +513,7 @@ export default class FlashMemo extends Plugin {
         if (!this.settings.hideOnBlur) this.restoreHideLayer();
         return;
       }
-      if (this.errorDialog || this.errorClosing || this.hiding || this.archiving || this.renaming || this.switching) return;
+      if (this.errorDialog || this.errorClosing || this.hiding || this.creatingCanvas || this.renaming || this.switching) return;
       // Already held while focused: do not change the layer after activation moves.
       this.holdHideLayer();
       this.blurTimer = setTimeout(() => {
@@ -572,7 +572,7 @@ export default class FlashMemo extends Plugin {
       this.cancelNameEdit = null;
       nameInput.removeEventListener('blur', onNameBlur);
       nameInput.removeEventListener('keydown', onNameKey);
-      this.archiveButton?.removeEventListener('click',onArchive); this.archiveButton = null;
+      this.newCanvasButton?.removeEventListener('click',onNewCanvas); this.newCanvasButton = null;
       bar.remove(); doc.body.classList.remove('flash-memo-window');
     };
     this.app.workspace.requestSaveLayout();
@@ -600,7 +600,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async hide(reason: 'blur' | 'escape' | 'close') {
-    if (this.errorDialog || this.errorClosing || !this.alive() || this.hidden || this.hiding || this.archiving || this.renaming || this.switching || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) {
+    if (this.errorDialog || this.errorClosing || !this.alive() || this.hidden || this.hiding || this.creatingCanvas || this.renaming || this.switching || (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned))) {
       if (!this.hiding) this.restoreHideLayer();
       return;
     }
@@ -647,7 +647,7 @@ export default class FlashMemo extends Plugin {
     if (this.disposed || !this.alive()) return;
     this.restoreWindowOpacity();
     this.hideGeneration++; this.hiding = false; this.clearBlur();
-    this.cancelNameEdit?.(); this.archiveDialog?.close();
+    this.cancelNameEdit?.(); this.newCanvasDialog?.close();
     this.drawingPicker?.hide();
     if (process.platform === 'win32' && this.native!.setOpacity && this.hiddenOpacity === null) {
       const opacity = this.native!.getOpacity?.() ?? 1;
@@ -658,47 +658,46 @@ export default class FlashMemo extends Plugin {
     this.restoreThrottling();
   }
 
-  private confirmArchive() {
-    if (this.errorDialog || !this.alive() || this.disposed || this.archiving || this.renaming || this.switching || this.archiveDialog) return;
+  private confirmNewCanvas() {
+    if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching || this.newCanvasDialog) return;
     try {
       const folder = drawingFolder(this.settings.folder);
       if (!folder) throw Error('invalid-folder');
-      this.archiveDialog = new ArchiveConfirm(this.app,(zh,en)=>this.t(zh,en),folder,
-        ()=>this.archiveCurrentDrawing(),()=>{this.archiveDialog=null;});
-      this.archiveDialog.open();
+      this.newCanvasDialog = new NewCanvasConfirm(this.app,(zh,en)=>this.t(zh,en),folder,
+        ()=>this.createNewCanvas(),()=>{this.newCanvasDialog=null;});
+      this.newCanvasDialog.open();
     } catch(error) { this.report(error); }
   }
 
-  private async archiveCurrentDrawing() {
-    if (this.errorDialog || !this.alive() || this.disposed || this.archiving || this.renaming || this.switching) return;
+  private async createNewCanvas() {
+    if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching) return;
     const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
     if (!current || !view.forceSave) { this.report(Error(this.t('当前画板暂时无法保存，请稍后重试。','The current canvas cannot be saved yet. Try again shortly.')), true); return; }
-    this.archiving = true; this.archiveButton!.disabled = true;
+    this.creatingCanvas = true; this.newCanvasButton!.disabled = true;
     this.hideGeneration++; this.hiding = false; this.clearBlur(); this.restoreWindowOpacity(true); this.keepRendererAwake();
-    let result: Awaited<ReturnType<typeof archiveDrawing>> | undefined;
     try {
       await view.forceSave();
       if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
       const plugin = this.drawingPlugin();
       const blank = await plugin.getBlankDrawing();
       if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
-      result = await archiveDrawing(this.app,current,this.settings.folder,blank,new Date(),plugin.settings?.compatibilityMode?'.excalidraw':'.excalidraw.md');
-      this.settings.file = result.fresh.path;
+      const fresh = await createDrawing(this.app,this.settings.folder,blank,plugin.settings?.compatibilityMode?'.excalidraw':'.excalidraw.md');
+      this.settings.file = fresh.path;
       await this.saveData(this.settings);
       if (!this.disposed && this.alive() && this.leaf === leaf) {
-        await leaf.setViewState({type:'excalidraw',state:{file:result.fresh.path},active:true});
+        await leaf.setViewState({type:'excalidraw',state:{file:fresh.path},active:true});
         this.updateName();
         this.show();
       }
       if (!this.disposed) this.settingTab?.display();
     } catch(error) {
       // Keep the saved original reachable even when a later step fails.
-      this.settings.file = result?.archived.path ?? current.path;
+      this.settings.file = current.path;
       try { await this.saveData(this.settings); } catch { /* Original files are never deleted. */ }
       this.report(error, true);
     } finally {
-      this.archiving = false;
-      if (this.archiveButton) this.archiveButton.disabled = false;
+      this.creatingCanvas = false;
+      if (this.newCanvasButton) this.newCanvasButton.disabled = false;
       if (this.alive() && !this.settings.pinned && !this.native!.isFocused()) this.requestHide('blur');
     }
   }
@@ -708,7 +707,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async switchDrawing(file: TFile) {
-    if (this.errorDialog || !this.alive() || this.disposed || this.archiving || this.renaming || this.switching || file.path === this.settings.file) return;
+    if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching || file.path === this.settings.file) return;
     const leaf = this.leaf!, view = leaf.view as DrawingView;
     const previous = this.settings.file;
     this.switching = true;
@@ -751,7 +750,7 @@ export default class FlashMemo extends Plugin {
   }
 
   private async renameDrawing(value: string) {
-    if (this.errorDialog || !this.alive() || this.disposed || this.archiving || this.renaming || this.switching) return;
+    if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching) return;
     const view = this.leaf!.view as DrawingView, file = view.file;
     if (!file) return;
     let renamed = false;
@@ -869,7 +868,7 @@ export default class FlashMemo extends Plugin {
     if (!closeWindow) { new Notice(`Flash Memo: ${message}`); return; }
     if (this.errorDialog) return;
     this.hideGeneration++; this.hiding = false; this.clearBlur();
-    for (const cleanup of [() => this.drawingPicker?.hide(), () => this.cancelNameEdit?.(), () => this.archiveDialog?.close()]) {
+    for (const cleanup of [() => this.drawingPicker?.hide(), () => this.cancelNameEdit?.(), () => this.newCanvasDialog?.close()]) {
       try { cleanup(); } catch (cleanupError) { console.error('Flash Memo error cleanup', cleanupError); }
     }
     const dialog = new CanvasError(this.app, (zh,en) => this.t(zh,en), message, this.popout?.doc, confirmed => {
@@ -917,7 +916,7 @@ export default class FlashMemo extends Plugin {
     this.disposed = true;
     this.clearLocalHotkey();
     this.recorder?.close();
-    this.archiveDialog?.close();
+    this.newCanvasDialog?.close();
     this.globalHotkey.dispose();
     // Leave a usable normal Excalidraw window after disabling the controller.
     if (this.alive()) {
@@ -997,7 +996,7 @@ class MemoSettingTab extends PluginSettingTab {
     const drawingSection = section(p.t('画板文件', 'Drawing files'));
     new Setting(drawingSection)
       .setName(p.t('画板创建路径', 'Canvas creation folder'))
-      .setDesc(p.t('相对于知识库根目录，例如 画板/速记。新画板和归档画板均保存在此路径。', 'Relative to the vault root, for example Drawings/Quick notes. New and archived canvases are saved here.'))
+      .setDesc(p.t('相对于知识库根目录，例如 画板/速记。新画板保存在此，已有画板保留原文件名和位置。', 'Relative to the vault root, for example Drawings/Quick notes. New canvases are stored here; existing drawings keep their filenames and locations.'))
       .addText(text => text.setValue(p.settings.folder).onChange(async value => {
         p.settings.folder = value; await p.saveData(p.settings);
       }));

@@ -19,7 +19,7 @@ Open a canvas with one shortcut, sketch or write, and click elsewhere to save an
 - **One shortcut, one familiar canvas.** Show or hide the same scratchpad; optionally use a system-wide shortcut on Windows x64.
 - **Out of the way when you need it.** Save and hide on focus loss with a short fade-out and no added blur delay, or pin the canvas above other windows.
 - **Files within reach.** Click the title to switch drawings; double-click to rename.
-- **A fresh page without losing the last one.** Archive the current drawing after confirmation and continue on a blank canvas.
+- **A fresh page without losing the last one.** Save the current drawing and create a new canvas, keeping the old filename and location.
 - **Your vault, your files.** Choose a drawing folder, embed drawings with `![[...]]`, and keep them when you disable the plugin.
 - **Optional background access.** Integrate with Tray to keep Obsidian running when its main window closes.
 
@@ -61,7 +61,7 @@ Excalidraw handles drawing and autosave. Flash Memo also requests a save before 
 
 ### Switch drawings and rename
 
-Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including archived drawings. Selecting one saves the current canvas before switching.
+Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including previous drawings. Selecting one saves the current canvas before switching.
 
 ![Title bar dropdown listing available drawings](docs/images/canvas-picker.png)
 
@@ -69,13 +69,13 @@ Double-click the filename to rename it in place. Press **Enter** to save or **Es
 
 ![Inline filename editing in the title bar](docs/images/rename.png)
 
-### Archive and start fresh
+### Create a new canvas
 
-Click the archive button and confirm. Flash Memo saves the drawing, moves it to a timestamped filename, and opens a new blank drawing in the same window.
+Click the new canvas button and confirm. Flash Memo saves the current drawing, then opens a new blank drawing in the same window. Every existing drawing keeps its filename and location, including default `Quick sketch` names.
 
-![Confirmation before archiving the current drawing](docs/images/archive.png)
+![Confirmation before creating a new canvas](docs/images/new-canvas.png)
 
-Archive names resemble `Sketch 2026-10-18 12-30-05.excalidraw.md`, with a number added on collisions. Files are moved through Obsidian's file manager to maintain note links. Save or creation failures do not delete the old drawing.
+New canvases use the first available numbered name, such as `Quick sketch 2.excalidraw.md`, in the configured creation folder. No existing files are renamed or moved. If saving fails, a new canvas is not created; a creation failure leaves the original drawing intact.
 
 ### Settings
 
@@ -85,7 +85,7 @@ Settings are grouped into **Window behavior**, **Keyboard shortcut**, and **Draw
 
 - **Window behavior:** close to system tray through Tray, and hide on focus loss.
 - **Keyboard shortcut:** enable global scope and change the window activation shortcut.
-- **Drawing files:** set the creation folder relative to the vault root and see the current drawing's path. New and archived drawings are stored in this folder.
+- **Drawing files:** set the creation folder relative to the vault root and see the current drawing's path. New drawings are stored in this folder; existing drawings retain their filenames and locations.
 
 Screenshots show the Simplified Chinese interface and temporary demo drawings. The pictured **Ctrl + Shift + Y** is a customized shortcut; the default is **Ctrl + Alt + Y**. The interface follows Obsidian's language, with Chinese and English translations.
 

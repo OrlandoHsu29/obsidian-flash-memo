@@ -367,3 +367,30 @@ test('final quit layout still excludes the owned window after controller reset',
  f.p.quitting=true;f.p.reset();cleanup[0]();
  assert.equal(f.p.app.workspace.getLayout().floating,undefined);
 });
+
+test('new canvas saves the old drawing before creating, persisting and switching',async()=>{
+ const f=fixture(),order=[];f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};
+ f.leaf.view.forceSave=async()=>order.push('save');
+ const create=f.p.app.vault.create;f.p.app.vault.create=async(...args)=>{order.push('create');return create(...args);};
+ const setState=f.leaf.setViewState.bind(f.leaf);f.leaf.setViewState=async state=>{order.push('switch');await setState(state);};
+ f.p.saveData=async()=>order.push('persist');
+ await f.p.createNewCanvas();
+ assert.deepEqual(order,['save','create','persist','switch']);assert.equal(f.p.settings.file,'Flash Memo/Quick sketch 1.excalidraw.md');
+ assert.equal(f.old.path,'Flash Memo/Original.excalidraw.md');assert.ok(f.files.has(f.old.path));assert.equal(f.p.newCanvasButton.disabled,false);
+});
+test('a failed source save prevents new canvas creation and keeps the original selected',async()=>{
+ const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let reports=0;
+ f.p.report=()=>reports++;f.leaf.view.forceSave=async()=>{throw Error('Save failed');};
+ await f.p.createNewCanvas();assert.equal(f.counts().creates,0);assert.equal(f.p.settings.file,f.old.path);assert.equal(f.p.creatingCanvas,false);assert.equal(reports,1);
+});
+test('a failed new canvas creation keeps the old filename and selection',async()=>{
+ const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};f.p.report=()=>{};
+ f.leaf.view.forceSave=async()=>{};f.p.app.vault.create=async()=>{throw Error('Disk full');};
+ await f.p.createNewCanvas();assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);assert.equal(f.p.newCanvasButton.disabled,false);
+});
+test('repeated new-canvas clicks cannot create duplicate drawings during a pending save',async()=>{
+ const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let finish;
+ f.leaf.view.forceSave=()=>new Promise(resolve=>finish=resolve);
+ const pending=f.p.createNewCanvas();while(!finish)await Promise.resolve();await f.p.createNewCanvas();finish();await pending;
+ assert.equal(f.counts().creates,1);assert.equal(f.p.creatingCanvas,false);
+});

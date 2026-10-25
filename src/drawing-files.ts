@@ -31,23 +31,8 @@ export function availableDrawingPath(app:App,folder:string,stem:string,extension
   }
 }
 
-// FileManager renames preserve Obsidian links to the archived drawing.
-// If creating the new drawing fails, put the old drawing back when safe.
-export async function archiveDrawing(app:App,current:TFile,folder:string,blank:string,date=new Date(),freshExtension?:'.excalidraw'|'.excalidraw.md'):Promise<{archived:TFile;fresh:TFile}> {
+export async function createDrawing(app:App,folder:string,blank:string,extension:'.excalidraw'|'.excalidraw.md'='.excalidraw.md'):Promise<TFile> {
   const target=await ensureDrawingFolder(app,folder);
-  const extension=current.path.endsWith('.excalidraw.md')?'.excalidraw.md':'.excalidraw';
-  const stamp=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-')+' '+[date.getHours(),date.getMinutes(),date.getSeconds()].map(n=>String(n).padStart(2,'0')).join('-');
-  const archivePath=availableDrawingPath(app,target,`Sketch ${stamp}`,extension);
-  const freshPath=availableDrawingPath(app,target,'Quick sketch',freshExtension??extension,current,true);
-  const original=current.path;
-  await app.fileManager.renameFile(current,archivePath);
-  try {
-    const fresh=await app.vault.create(freshPath,blank);
-    return {archived:current,fresh};
-  } catch(error) {
-    if(!app.vault.getAbstractFileByPath(original)){
-      try {await app.fileManager.renameFile(current,original);}catch{/* The saved archived file remains intact. */}
-    }
-    throw error;
-  }
+  const path=availableDrawingPath(app,target,'Quick sketch',extension,undefined,true);
+  return app.vault.create(path,blank);
 }
