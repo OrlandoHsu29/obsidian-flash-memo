@@ -63,7 +63,7 @@ Saving and the short fade-out start together, so the canvas responds without wai
 
 ### Switch drawings and rename
 
-Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including previous drawings. Selecting one saves the current canvas before switching.
+Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including previous drawings. Each row shows the file's last modified time on the right. Selecting one saves the current canvas before switching.
 
 ![Title bar dropdown listing available drawings](docs/images/canvas-picker.png)
 

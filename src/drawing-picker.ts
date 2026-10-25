@@ -35,12 +35,17 @@ export class DrawingPicker {
       item.setAttribute('aria-selected', String(selected));
       item.createSpan({text: selected ? '✓' : '', cls: 'flash-memo-picker-check'});
       item.createSpan({text: drawingName(file.path).name, cls: 'flash-memo-picker-name'});
-      item.createSpan({text: file.parent?.path ?? '', cls: 'flash-memo-picker-folder'});
+      const modified = new Date(file.stat.mtime), pad = (value: number) => String(value).padStart(2, '0');
+      const timestamp = Number.isFinite(modified.getTime())
+        ? `${modified.getFullYear()}-${pad(modified.getMonth() + 1)}-${pad(modified.getDate())} ${pad(modified.getHours())}:${pad(modified.getMinutes())}` : '—';
+      const time = item.createEl('time', {text: timestamp, cls: 'flash-memo-picker-modified'});
+      if (Number.isFinite(modified.getTime())) time.dateTime = modified.toISOString();
+      time.setAttribute('aria-label', this.t(`最后修改：${timestamp}`, `Last modified: ${timestamp}`));
       item.addEventListener('click', () => { this.hide(); this.select(file); });
     }
     if (!files.length) list.createDiv({cls: 'suggestion-empty', text: this.t('此目录暂无画板', 'No canvases in this folder')});
     const bounds = this.anchor.getBoundingClientRect();
-    const width = Math.min(Math.max(bounds.width, 320), this.doc.documentElement.clientWidth - 16);
+    const width = Math.min(Math.max(bounds.width, 380), this.doc.documentElement.clientWidth - 16);
     list.style.width = `${width}px`;
     list.style.left = `${Math.max(8, Math.min(bounds.left + (bounds.width - width) / 2, this.doc.documentElement.clientWidth - width - 8))}px`;
     list.style.top = `${bounds.bottom + 4}px`;

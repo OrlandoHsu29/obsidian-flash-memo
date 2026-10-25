@@ -51,7 +51,7 @@ body.flash-memo-window .flash-memo-bar .flash-memo-title {
 .flash-memo-picker .flash-memo-picker-item:focus-visible { background: var(--background-modifier-hover); }
 .flash-memo-picker-check { width: 14px; flex-shrink: 0; color: var(--text-accent); }
 .flash-memo-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flash-memo-picker-folder { max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.flash-memo-picker-modified { flex-shrink: 0; white-space: nowrap; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
 .flash-memo-bar .flash-memo-name-input {
   -webkit-app-region: no-drag; width: 100%; min-width: 0; height: 28px;
   text-align: center; font-size: var(--font-ui-small);
