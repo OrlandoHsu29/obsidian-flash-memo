@@ -59,6 +59,8 @@ Flash Memo's own popout is excluded from saved workspace layouts, so starting Ob
 
 Excalidraw handles drawing and autosave. Flash Memo also requests a save before hiding or switching drawings. It keeps the main renderer awake while the canvas is visible and during saving, including when the main window is minimized, then restores its previous background throttling setting.
 
+Saving and the short fade-out start together, so the canvas responds without waiting for disk saving. The window is hidden only after both complete; a save failure restores the visible canvas and shows an error.
+
 ### Switch drawings and rename
 
 Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including previous drawings. Selecting one saves the current canvas before switching.

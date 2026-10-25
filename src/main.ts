@@ -614,22 +614,31 @@ export default class FlashMemo extends Plugin {
       if (!exists) { this.hideDeletedDrawing(); return; }
       const view = this.leaf!.view as DrawingView;
       if (!view.forceSave) throw Error(this.t('当前 Excalidraw 版本不支持保存接口，请更新插件。', 'Please update Excalidraw: its save interface is unavailable.'));
-      await view.forceSave();
-      if (generation !== this.hideGeneration || !this.alive()) return;
       if (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned || this.native!.isFocused())) return;
-      // Animate explicitly: native hide does not reliably animate on Windows.
-      if (!await this.windowFade.fadeOut(this.native!)) return;
+      // Give immediate visual feedback while Excalidraw saves. Only hide the
+      // native window after both finish; a failed save cancels/restores the fade.
+      const saving = Promise.resolve().then(() => {
+        if (generation !== this.hideGeneration || !this.alive()) return;
+        return view.forceSave!();
+      });
+      const [faded] = await Promise.all([this.windowFade.fadeOut(this.native!), saving]);
       if (generation !== this.hideGeneration || !this.alive()) return;
+      if (!faded) return;
+      if (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned || this.native!.isFocused())) {
+        this.restoreWindowOpacity();
+        return;
+      }
       this.hidden = true;
       this.native!.hide();
       this.restoreThrottling();
     } catch (error) {
       if (generation !== this.hideGeneration || !this.alive()) return;
+      this.restoreWindowOpacity();
       try {
         if (!await this.app.vault.adapter.exists(this.settings.file)) { this.hideDeletedDrawing(); return; }
       } catch { /* Report the original save/storage error when deletion cannot be confirmed. */ }
       if (generation !== this.hideGeneration || !this.alive()) return;
-      this.restoreWindowOpacity(); this.report(error, true);
+      this.report(error, true);
     }
     finally {
       if (generation === this.hideGeneration) { this.hiding = false; this.restoreHideLayer(); }

@@ -30,7 +30,7 @@ export class WindowFade {
         if (this.state !== state) return;
         try {
           if (window.isDestroyed()) { this.state = null; resolve(false); return; }
-          const progress = Math.min(1, (performance.now() - started) / 140);
+          const progress = Math.min(1, (performance.now() - started) / 80);
           window.setOpacity!(opacity * (1 - progress));
           if (this.state !== state) return;
           if (progress === 1) { resolve(true); return; }

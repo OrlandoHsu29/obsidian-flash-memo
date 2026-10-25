@@ -222,7 +222,7 @@ test('exit stays above the activated app through saving and fade, then releases 
  f.p.windowFade.fadeOut=async()=>{assert.equal(f.p.hideLayerHeld,true);order.push('fade');return true;};
  f.p.native.hide=()=>order.push('hide');
  await FlashMemo.prototype.hide.call(f.p,'blur');
- assert.deepEqual(order,['topmost','save','fade','hide','normal']);
+ assert.deepEqual(order,['topmost','fade','save','hide','normal']);
  assert.equal(f.p.settings.pinned,false);assert.equal(f.p.hideLayerHeld,false);
 });
 
@@ -260,7 +260,7 @@ test('auto-hide is prepared before showing and does not raise the window again d
  f.p.windowFade.fadeOut=async()=>{order.push('fade');return true;};
  f.p.native.hide=()=>order.push('hide');
  await FlashMemo.prototype.hide.call(f.p,'blur');
- assert.deepEqual(order,['topmost','show','focus','save','fade','hide','normal']);
+ assert.deepEqual(order,['topmost','show','focus','fade','save','hide','normal']);
  assert.equal(f.p.settings.pinned,false);
 });
 
@@ -393,4 +393,41 @@ test('repeated new-canvas clicks cannot create duplicate drawings during a pendi
  f.leaf.view.forceSave=()=>new Promise(resolve=>finish=resolve);
  const pending=f.p.createNewCanvas();while(!finish)await Promise.resolve();await f.p.createNewCanvas();finish();await pending;
  assert.equal(f.counts().creates,1);assert.equal(f.p.creatingCanvas,false);
+});
+
+test('fade starts before a slow save completes, but native hiding waits for that save',async()=>{
+ const f=fixture();f.p.hidden=false;let saveDone,fadeDone,started=false;
+ f.leaf.view.forceSave=()=>new Promise(resolve=>saveDone=resolve);
+ f.p.windowFade.fadeOut=()=>{started=true;return new Promise(resolve=>fadeDone=resolve);};
+ const pending=FlashMemo.prototype.hide.call(f.p,'blur');while(!saveDone)await Promise.resolve();
+ assert.equal(started,true);assert.equal(f.counts().hides,0);
+ fadeDone(true);await Promise.resolve();assert.equal(f.counts().hides,0);
+ saveDone();await pending;assert.equal(f.counts().hides,1);
+});
+
+test('a fast save also waits for the visible fade to complete',async()=>{
+ const f=fixture();f.p.hidden=false;let fadeDone,saved=false;
+ f.leaf.view.forceSave=async()=>{saved=true;};
+ f.p.windowFade.fadeOut=()=>new Promise(resolve=>fadeDone=resolve);
+ const pending=FlashMemo.prototype.hide.call(f.p,'close');while(!saved)await Promise.resolve();
+ assert.equal(f.counts().hides,0);fadeDone(true);await pending;assert.equal(f.counts().hides,1);
+});
+
+test('a failed parallel save cancels the unfinished fade before reporting the error',async()=>{
+ const f=fixture();f.p.hidden=false;let fadeDone,canceled=false,reports=0;
+ f.p.windowFade.fadeOut=()=>new Promise(resolve=>fadeDone=resolve);
+ f.p.windowFade.cancel=()=>{canceled=true;fadeDone?.(false);};
+ f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
+ f.p.report=()=>{assert.equal(canceled,true);reports++;};
+ await FlashMemo.prototype.hide.call(f.p,'blur');
+ assert.equal(reports,1);assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);
+});
+
+test('deletion while starting the fade cancels the queued save of the deleted drawing',async()=>{
+ const f=fixture();f.p.hidden=false;
+ f.leaf.view.forceSave=async()=>assert.fail('A deleted drawing must not be saved again');
+ f.p.windowFade.fadeOut=async()=>{
+  f.files.delete(f.old.path);f.disk.delete(f.old.path);f.p.onDrawingDeleted(f.old.path);return false;
+ };
+ await FlashMemo.prototype.hide.call(f.p,'blur');assert.equal(f.p.hidden,true);assert.equal(f.counts().hides,1);
 });
