@@ -10,6 +10,8 @@
 
 Open Glimmer Memo with one shortcut, type a note or sketch, and click elsewhere to save and hide it. The next time you open Glimmer Memo, your current file is still there. Text notes use Obsidian's native Markdown editor; drawings use Excalidraw. Both stay as ordinary files in your vault.
 
+![Glimmer Memo floating window showing a Markdown quick note](docs/images/overview.png)
+
 ## Highlights
 
 - **One shortcut, one familiar canvas.** Show or hide the same scratchpad; optionally use a system-wide shortcut on Windows x64.
@@ -61,11 +63,15 @@ Saving and the short fade-out start together, so the canvas responds without wai
 
 Single-click the filename in the title bar to browse notes and drawings in the configured folder and its subfolders. Small drawing and document icons distinguish canvases from text notes. Long titles are shortened with an ellipsis to keep the list compact; hover a row to read its full name. Each row shows the file's last modified time on the right. Selecting one saves the current file before switching.
 
+![Title bar file list with distinct icons for notes and sketches](docs/images/canvas-picker.png)
+
 Double-click the filename to rename it in place. Press **Enter** to save or **Esc** to cancel; the original extension is preserved.
 
 ### Create a note or canvas
 
 Click the new file button, then select **New note** or **New sketch** in the compact chooser. Glimmer Memo saves the current file, then opens a new blank memo in the same window. Every existing file keeps its filename and location.
+
+![New memo chooser with separate buttons for a note and a sketch](docs/images/new-canvas.png)
 
 Text notes use `Quick note 1.md`; canvases use `Quick sketch 1.excalidraw.md` (or `.excalidraw` in compatibility mode). Both use the first available number in the configured creation folder. No existing files are renamed or moved. If saving fails, no new file is created; a creation failure leaves the original intact.
 

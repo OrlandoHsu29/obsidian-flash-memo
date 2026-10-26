@@ -1,7 +1,7 @@
 {
   "id": "glimmer-memo",
   "name": "Glimmer Memo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.10.0",
   "description": "Floating Markdown notes and Excalidraw sketches with auto-hide and pinning.",
   "author": "OrlandoHsu29",
