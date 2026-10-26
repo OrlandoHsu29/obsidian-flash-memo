@@ -9,7 +9,8 @@ import { join } from 'node:path';
 import { GlobalHotkey, HotkeyStatus, localHotkey } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
 import { NewCanvasConfirm } from './new-canvas-confirm';
-import { createDrawing, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
+import { createDrawing, createNote, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
+import { memoType, memoViewState, MemoType } from './memo-file';
 import { drawingName, renamedDrawingPath } from './drawing-name';
 import { DrawingPicker } from './drawing-picker';
 import { CanvasError } from './canvas-error';
@@ -57,6 +58,7 @@ interface DesktopWindow {
 interface DrawingView {
   file?: TFile;
   forceSave?: () => Promise<unknown>;
+  save?: () => Promise<unknown>;
   excalidrawAPI?: { getAppState(): { editingTextElement?: unknown; openDialog?: unknown; openMenu?: unknown } };
 }
 interface DrawingPlugin {
@@ -143,18 +145,18 @@ export default class FlashMemo extends Plugin {
     this.settings = { ...DEFAULTS, ...await this.loadData() };
     this.filterSavedLayout();
     this.addCommand({
-      id: 'toggle', name: this.t('显示/隐藏速记画板', 'Show/hide quick canvas'),
+      id: 'toggle', name: this.t('显示/隐藏速记窗口', 'Show/hide quick memo'),
       callback: () => this.triggerToggle(),
     });
     this.addCommand({
-      id: 'pin', name: this.t('固定/取消固定速记窗口', 'Pin/unpin quick canvas'),
+      id: 'pin', name: this.t('固定/取消固定速记窗口', 'Pin/unpin quick memo'),
       checkCallback: checking => {
         if (!this.alive() || this.hidden) return false;
         if (!checking) this.togglePin();
         return true;
       },
     });
-    this.addRibbonIcon('pencil-ruler', this.t('速记画板', 'Quick canvas'), () => {
+    this.addRibbonIcon('pencil-ruler', this.t('速记窗口', 'Quick memo'), () => {
       this.triggerToggle();
     });
     this.registerObsidianProtocolHandler('flash-memo', params => {
@@ -220,7 +222,7 @@ export default class FlashMemo extends Plugin {
       // Never take over main-window tabs or a popout containing other tabs.
       if (leaves.filter(other => other.getContainer() === container).length !== 1) return false;
       const state = leaf.getViewState();
-      return state.type === 'excalidraw' && state.state?.file === this.settings.file;
+      return state.type === memoViewState(this.settings.file).type && state.state?.file === this.settings.file;
     });
     const restored = candidates.find(leaf => (leaf as WorkspaceLeaf & { id: string }).id === this.settings.leafId)
       ?? (candidates.length === 1 ? candidates[0] : undefined);
@@ -256,8 +258,7 @@ export default class FlashMemo extends Plugin {
       this.keepRendererAwake();
       if (this.settings.file && await this.app.vault.adapter.exists(this.settings.file)) {
         const view = leaf.view as DrawingView;
-        if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
-        await view.forceSave();
+        await this.saveMemo(view);
       }
       // Layout filtering already excludes the popout. Do not tear down tabs or
       // start another settings/layout write during application shutdown.
@@ -356,9 +357,18 @@ export default class FlashMemo extends Plugin {
   }
 
   private async ensureDrawing(): Promise<TFile> {
-    const plugin = this.drawingPlugin();
     const existing = this.settings.file && this.app.vault.getFileByPath(this.settings.file);
-    if (existing && await this.app.vault.adapter.exists(existing.path)) return existing;
+    if (existing && await this.app.vault.adapter.exists(existing.path)) {
+      if (memoType(existing.path) === 'sketch') this.drawingPlugin();
+      return existing;
+    }
+    if (this.settings.file && memoType(this.settings.file) === 'note') {
+      const file = await createNote(this.app, this.settings.folder);
+      this.settings.file = file.path;
+      await this.saveData(this.settings);
+      return file;
+    }
+    const plugin = this.drawingPlugin();
     const folder = await ensureDrawingFolder(this.app, this.settings.folder);
     const content = await plugin.getBlankDrawing();
     const extension = plugin.settings?.compatibilityMode ? '.excalidraw' : '.excalidraw.md';
@@ -387,7 +397,7 @@ export default class FlashMemo extends Plugin {
         if ((this.leaf!.view as DrawingView).file !== file) {
           this.hideGeneration++; this.hiding = false; this.clearBlur();
           this.keepRendererAwake();
-          await this.leaf!.setViewState({type:'excalidraw',state:{file:file.path},active:true});
+          await this.leaf!.setViewState(memoViewState(file.path));
           if (this.disposed || !this.alive()) return;
           this.updateName();
           this.show();
@@ -398,7 +408,7 @@ export default class FlashMemo extends Plugin {
       this.reset();
       this.keepRendererAwake();
       created = this.app.workspace.getLeaf('window');
-      await created.setViewState({ type: 'excalidraw', state: { file: file.path }, active: true });
+      await created.setViewState(memoViewState(file.path));
       await this.attach(created);
       if (this.disposed) return;
       this.settings.leafId = (created as WorkspaceLeaf & { id: string }).id;
@@ -428,7 +438,7 @@ export default class FlashMemo extends Plugin {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     if (this.disposed) { leaf.detach(); return; }
-    if (!native || native.isDestroyed()) throw Error(this.t('无法初始化速记窗口。', 'Could not initialize the quick canvas window.'));
+    if (!native || native.isDestroyed()) throw Error(this.t('无法初始化速记窗口。', 'Could not initialize the quick memo window.'));
     this.leaf = leaf;
     this.popout = container;
     this.native = native;
@@ -455,7 +465,7 @@ export default class FlashMemo extends Plugin {
     title.setAttribute('aria-hidden', 'true');
     const nameContainer = bar.createDiv({cls: 'flash-memo-name-container'});
     this.nameButton = nameContainer.createEl('button', {cls: 'flash-memo-name'});
-    this.nameButton.setAttribute('aria-label', this.t('单击选择画板，双击修改文件名', 'Click to choose a canvas; double-click to rename'));
+    this.nameButton.setAttribute('aria-label', this.t('单击选择笔记或画板，双击修改文件名', 'Click to choose a note or canvas; double-click to rename'));
     const nameInput = nameContainer.createEl('input', {cls: 'flash-memo-name-input', type: 'text'});
     nameInput.hidden = true;
     nameInput.setAttribute('aria-label', this.t('文件名（不含扩展名）', 'File name (without extension)'));
@@ -506,7 +516,7 @@ export default class FlashMemo extends Plugin {
     const actions = bar.createDiv({cls: 'flash-memo-actions'});
     this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon flash-memo-new-canvas'});
     setIcon(this.newCanvasButton, 'file-plus');
-    const newCanvasLabel = this.t('新建画板', 'Create a new canvas');
+    const newCanvasLabel = this.t('新建笔记或画板', 'Create a note or canvas');
     this.newCanvasButton.setAttribute('aria-label',newCanvasLabel);
     const onNewCanvas = () => this.runWindowAction(() => this.confirmNewCanvas());
     this.newCanvasButton.addEventListener('click',onNewCanvas);
@@ -627,13 +637,12 @@ export default class FlashMemo extends Plugin {
       if (generation !== this.hideGeneration || !this.alive()) return;
       if (!exists) { this.hideDeletedDrawing(); return; }
       const view = this.leaf!.view as DrawingView;
-      if (!view.forceSave) throw Error(this.t('当前 Excalidraw 版本不支持保存接口，请更新插件。', 'Please update Excalidraw: its save interface is unavailable.'));
       if (reason === 'blur' && (!this.settings.hideOnBlur || this.settings.pinned || this.native!.isFocused())) return;
       // Give immediate visual feedback while Excalidraw saves. Only hide the
       // native window after both finish; a failed save cancels/restores the fade.
       const saving = Promise.resolve().then(() => {
         if (generation !== this.hideGeneration || !this.alive()) return;
-        return view.forceSave!();
+        return this.saveMemo(view);
       });
       const [faded] = await Promise.all([this.windowFade.fadeOut(this.native!), saving]);
       if (generation !== this.hideGeneration || !this.alive()) return;
@@ -686,29 +695,41 @@ export default class FlashMemo extends Plugin {
     try {
       const folder = drawingFolder(this.settings.folder);
       if (!folder) throw Error('invalid-folder');
-      this.newCanvasDialog = new NewCanvasConfirm(this.app,(zh,en)=>this.t(zh,en),folder,
-        ()=>this.createNewCanvas(),()=>{this.newCanvasDialog=null;});
+      this.newCanvasDialog = new NewCanvasConfirm(this.app,(zh,en)=>this.t(zh,en),
+        type=>this.createNewCanvas(type),()=>{this.newCanvasDialog=null;},this.popout?.doc);
       this.newCanvasDialog.open();
     } catch(error) { this.report(error); }
   }
 
-  private async createNewCanvas() {
+  private async saveMemo(view: DrawingView) {
+    // Markdown's TextFileView.save flushes its pending autosave; Excalidraw
+    // owns its drawing serialization and exposes forceSave instead.
+    const save = memoType(view.file?.path ?? this.settings.file) === 'note' ? view.save : view.forceSave;
+    if (!save) throw Error(this.t('当前文件暂时无法保存，请稍后重试。', 'The current file cannot be saved yet. Try again shortly.'));
+    await save.call(view);
+  }
+
+  private async createNewCanvas(type: MemoType = 'sketch') {
     if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching) return;
     const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
-    if (!current || !view.forceSave) { this.report(Error(this.t('当前画板暂时无法保存，请稍后重试。','The current canvas cannot be saved yet. Try again shortly.')), true); return; }
+    if (!current) { this.report(Error(this.t('当前文件暂时无法保存，请稍后重试。','The current file cannot be saved yet. Try again shortly.')), true); return; }
     this.creatingCanvas = true; this.newCanvasButton!.disabled = true;
     this.hideGeneration++; this.hiding = false; this.clearBlur(); this.restoreWindowOpacity(true); this.keepRendererAwake();
     try {
-      await view.forceSave();
+      await this.saveMemo(view);
       if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
-      const plugin = this.drawingPlugin();
-      const blank = await plugin.getBlankDrawing();
-      if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
-      const fresh = await createDrawing(this.app,this.settings.folder,blank,plugin.settings?.compatibilityMode?'.excalidraw':'.excalidraw.md');
+      let fresh: TFile;
+      if (type === 'note') fresh = await createNote(this.app, this.settings.folder);
+      else {
+        const plugin = this.drawingPlugin();
+        const blank = await plugin.getBlankDrawing();
+        if (this.disposed || !this.alive() || this.leaf !== leaf || leaf.view !== view) return;
+        fresh = await createDrawing(this.app,this.settings.folder,blank,plugin.settings?.compatibilityMode?'.excalidraw':'.excalidraw.md');
+      }
       this.settings.file = fresh.path;
       await this.saveData(this.settings);
       if (!this.disposed && this.alive() && this.leaf === leaf) {
-        await leaf.setViewState({type:'excalidraw',state:{file:fresh.path},active:true});
+        await leaf.setViewState(memoViewState(fresh.path));
         this.updateName();
         this.show();
       }
@@ -716,6 +737,10 @@ export default class FlashMemo extends Plugin {
     } catch(error) {
       // Keep the saved original reachable even when a later step fails.
       this.settings.file = current.path;
+      if (!this.disposed && this.alive() && this.leaf === leaf && leaf.view !== view) {
+        try { await leaf.setViewState(memoViewState(current.path)); } catch { /* Keep the saved original file intact. */ }
+      }
+      this.updateName();
       try { await this.saveData(this.settings); } catch { /* Original files are never deleted. */ }
       this.report(error, true);
     } finally {
@@ -726,7 +751,11 @@ export default class FlashMemo extends Plugin {
   }
 
   private updateName() {
-    if (this.nameButton) this.nameButton.setText(drawingName(this.settings.file).name || this.t('速记画板', 'Quick canvas'));
+    if (this.nameButton) {
+      const name = drawingName(this.settings.file).name || this.t('速记', 'Quick memo');
+      this.nameButton.setText(name);
+      this.nameButton.setAttribute('aria-label', `${name} — ${this.t('单击切换，双击重命名', 'Click to switch; double-click to rename')}`);
+    }
   }
 
   private async switchDrawing(file: TFile) {
@@ -741,15 +770,14 @@ export default class FlashMemo extends Plugin {
     this.keepRendererAwake();
     let changingView = false;
     try {
-      if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选画板已不存在，请重新选择。', 'The selected canvas no longer exists. Choose another canvas.'));
+      if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选文件已不存在，请重新选择。', 'The selected file no longer exists. Choose another file.'));
       if (await this.app.vault.adapter.exists(previous)) {
-        if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
-        await view.forceSave();
+        await this.saveMemo(view);
       }
       if (this.disposed || !this.alive() || this.leaf !== leaf || this.hidden) return;
-      if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选画板已不存在，请重新选择。', 'The selected canvas no longer exists. Choose another canvas.'));
+      if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选文件已不存在，请重新选择。', 'The selected file no longer exists. Choose another file.'));
       changingView = true;
-      await leaf.setViewState({type:'excalidraw',state:{file:file.path},active:true});
+      await leaf.setViewState(memoViewState(file.path));
       if (this.disposed || !this.alive() || this.leaf !== leaf || this.hidden) return;
       this.settings.file = file.path;
       changingView = false;
@@ -760,7 +788,7 @@ export default class FlashMemo extends Plugin {
       if (this.disposed || !this.alive() || (this.hidden && !this.app.vault.getFileByPath(previous))) return;
       if (changingView && !this.disposed && this.alive() && this.leaf === leaf) {
         try {
-          if (await this.app.vault.adapter.exists(previous)) await leaf.setViewState({type:'excalidraw',state:{file:previous},active:true});
+          if (await this.app.vault.adapter.exists(previous)) await leaf.setViewState(memoViewState(previous));
         } catch { /* Keep both files intact if the view cannot be restored. */ }
       }
       this.report(error, true);
@@ -782,12 +810,11 @@ export default class FlashMemo extends Plugin {
       if (target === file.path) return;
       const existing = this.app.vault.getAbstractFileByPath(target);
       if (existing && existing !== file) throw Error('drawing-name-exists');
-      if (!view.forceSave) throw Error(this.t('当前画板暂时无法保存，请稍后重试。', 'The current canvas cannot be saved yet. Try again shortly.'));
       this.renaming = true;
       this.hideGeneration++; this.hiding = false; this.clearBlur();
       this.restoreWindowOpacity(true);
       this.nameButton!.disabled = true;
-      await view.forceSave();
+      await this.saveMemo(view);
       if (this.disposed || !this.alive() || this.leaf!.view !== view) return;
       await this.app.fileManager.renameFile(file, target);
       this.settings.file = file.path;
@@ -957,7 +984,7 @@ class MemoSettingTab extends PluginSettingTab {
   hide() { this.plugin.cancelHotkeyRecording(); super.hide(); }
   updateStatus() {
     if (!this.statusEl?.isConnected) return;
-    const description = this.plugin.t('显示或隐藏速记画板。开启上方“全局快捷键”后可在任意应用中使用，关闭后仅在 Obsidian 内生效。', 'Show or hide the quick canvas. Enable Global shortcut above to use it from any app; otherwise it works inside Obsidian only.');
+    const description = this.plugin.t('显示或隐藏速记窗口。开启上方“全局快捷键”后可在任意应用中使用，关闭后仅在 Obsidian 内生效。', 'Show or hide the quick memo. Enable Global shortcut above to use it from any app; otherwise it works inside Obsidian only.');
     const problem = this.plugin.hotkeyProblem();
     this.statusEl.setText(problem ? `${description} ${problem}` : description);
   }
@@ -972,7 +999,7 @@ class MemoSettingTab extends PluginSettingTab {
     const windowSection = section(p.t('窗口行为', 'Window behavior'));
     const trayStatus = p.tray.status();
     const trayDescription = document.createDocumentFragment();
-    trayDescription.append(p.t('关闭 Obsidian 主窗口时收起到托盘，让速记快捷键继续可用。由可选插件 Tray 提供，完全退出请使用托盘菜单的 Close Vault。', 'Keep Obsidian in the system tray when closing its main window so the quick canvas shortcut stays available. Requires the optional Tray plugin; use Close Vault in the tray menu to exit.'));
+    trayDescription.append(p.t('关闭 Obsidian 主窗口时收起到托盘，让速记快捷键继续可用。由可选插件 Tray 提供，完全退出请使用托盘菜单的 Close Vault。', 'Keep Obsidian in the system tray when closing its main window so the quick memo shortcut stays available. Requires the optional Tray plugin; use Close Vault in the tray menu to exit.'));
     if (trayStatus === 'missing') {
       trayDescription.append(p.t(' 推荐先安装 ', ' Install the recommended '));
       trayDescription.createEl('a', {text: 'Tray', href: 'obsidian://show-plugin?id=tray'});
@@ -996,7 +1023,7 @@ class MemoSettingTab extends PluginSettingTab {
     }));
     new Setting(windowSection)
       .setName(p.t('失焦时自动隐藏', 'Hide on focus loss'))
-      .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏画板；关闭后画板保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the canvas. Turn off to keep it visible.'))
+      .setDesc(p.t('默认开启。未固定时，点击其他窗口会保存并隐藏速记；关闭后保持显示。', 'Enabled by default. When unpinned, clicking another window saves and hides the memo. Turn off to keep it visible.'))
       .addToggle(toggle => toggle.setValue(p.settings.hideOnBlur).onChange(async value => {
         await p.setHideOnBlur(value);
       }));
@@ -1016,15 +1043,15 @@ class MemoSettingTab extends PluginSettingTab {
     shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).onClick(()=>p.recordGlobalHotkey()));
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();
-    const drawingSection = section(p.t('画板文件', 'Drawing files'));
+    const drawingSection = section(p.t('速记文件', 'Memo files'));
     new Setting(drawingSection)
-      .setName(p.t('画板创建路径', 'Canvas creation folder'))
-      .setDesc(p.t('相对于知识库根目录，例如 画板/速记。新画板保存在此，已有画板保留原文件名和位置。', 'Relative to the vault root, for example Drawings/Quick notes. New canvases are stored here; existing drawings keep their filenames and locations.'))
+      .setName(p.t('速记创建路径', 'Memo creation folder'))
+      .setDesc(p.t('相对于知识库根目录，例如 笔记/速记。新笔记和画板保存在此，已有文件保留原文件名和位置。', 'Relative to the vault root, for example Notes/Quick memos. New notes and canvases are stored here; existing files keep their filenames and locations.'))
       .addText(text => text.setValue(p.settings.folder).onChange(async value => {
         p.settings.folder = value; await p.saveData(p.settings);
       }));
     new Setting(drawingSection)
-      .setName(p.t('当前画板', 'Current canvas'))
+      .setName(p.t('当前文件', 'Current file'))
       .setDesc(p.settings.file || p.t('首次呼出时自动创建。', 'Created automatically on first use.'));
   }
 }

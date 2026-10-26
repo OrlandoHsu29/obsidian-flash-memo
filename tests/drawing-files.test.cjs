@@ -3,9 +3,9 @@ const assert=require('node:assert/strict');
 const{build}=require('esbuild');
 const fs=require('node:fs/promises');
 const path=require('node:path');
-let createDrawing,drawingFolder,availableDrawingPath,drawingFiles;
+let createDrawing,createNote,drawingFolder,availableDrawingPath,drawingFiles;
 const output=path.resolve('.drawing-test-build/drawing-files.cjs');
-before(async()=>{await build({entryPoints:['src/drawing-files.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({createDrawing,drawingFolder,availableDrawingPath,drawingFiles}=require(output));});
+before(async()=>{await build({entryPoints:['src/drawing-files.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({createDrawing,createNote,drawingFolder,availableDrawingPath,drawingFiles}=require(output));});
 after(async()=>{await fs.unlink(output);await fs.rmdir(path.dirname(output));});
 function fixture(filename='Quick sketch 1.excalidraw.md'){
  const current={path:'Inbox/'+filename},files=new Map([[current.path,current]]),data=new Map([[current,'saved original']]);
@@ -24,11 +24,18 @@ test('new quick sketches start at 1 and skip occupied numbered paths',()=>{
  assert.equal(availableDrawingPath(f.app,'Inbox','Quick sketch','.excalidraw.md',undefined,true),'Inbox/Quick sketch 3.excalidraw.md');
  assert.equal(availableDrawingPath(f.app,'Inbox','Quick sketch','.excalidraw',undefined,true),'Inbox/Quick sketch 1.excalidraw');
 });
-test('canvas picker lists only suffixed drawings inside the configured folder, including older archives',()=>{
- const paths=['Flash Memo/Quick sketch 10.excalidraw.md','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Archive/Old.excalidraw','Flash Memo/Note.md','Flash Memos/Other.excalidraw.md','Elsewhere/Other.excalidraw.md'];
+test('memo picker lists Markdown and drawings inside the configured folder, excluding other files and folders',()=>{
+ const paths=['Flash Memo/Quick sketch 10.excalidraw.md','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Archive/Old.excalidraw','Flash Memo/Note.md','Flash Memo/image.png','Flash Memos/Other.excalidraw.md','Elsewhere/Other.excalidraw.md'];
  assert.deepEqual(drawingFiles({vault:{getFiles:()=>paths.map(path=>({path}))}},'Flash Memo').map(f=>f.path),[
-  'Flash Memo/Archive/Old.excalidraw','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Quick sketch 10.excalidraw.md'
+  'Flash Memo/Archive/Old.excalidraw','Flash Memo/Note.md','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Quick sketch 10.excalidraw.md'
  ]);
+});
+
+test('text notes get distinct numbered names without overwriting notes or drawings',async()=>{
+ const f=fixture();f.files.set('Inbox/Quick note 1.md',{path:'Inbox/Quick note 1.md'});
+ const note=await createNote(f.app,'Inbox');
+ assert.equal(note.path,'Inbox/Quick note 2.md');assert.equal(f.data.get(note),'');
+ assert.equal(f.data.get(f.current),'saved original');
 });
 test('creating a new canvas preserves numbered, custom and previously archived names and contents',async()=>{
  for(const name of ['Quick sketch 1.excalidraw.md','会议记录.excalidraw.md','Sketch 2026-10-18 12-30-05.excalidraw.md']){

@@ -2,8 +2,13 @@ import type { App, TFile } from 'obsidian';
 
 export function drawingFiles(app: App, folder: string): TFile[] {
   const prefix = drawingFolder(folder) + '/';
-  return app.vault.getFiles().filter(file => file.path.startsWith(prefix) && /\.excalidraw(?:\.md)?$/i.test(file.path))
+  return app.vault.getFiles().filter(file => file.path.startsWith(prefix) && /\.(?:md|excalidraw)$/i.test(file.path))
     .sort((a, b) => a.path.localeCompare(b.path, undefined, {numeric: true, sensitivity: 'base'}));
+}
+
+export async function createNote(app: App, folder: string): Promise<TFile> {
+  const target = await ensureDrawingFolder(app, folder);
+  return app.vault.create(availableDrawingPath(app, target, 'Quick note', '.md', undefined, true), '');
 }
 
 export function drawingFolder(value: string): string {

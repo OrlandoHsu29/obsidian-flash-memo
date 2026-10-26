@@ -15,7 +15,7 @@ export class CanvasError extends Modal {
     this.modalEl.classList.add('flash-memo-error');
     this.setTitle(this.t('Flash Memo 遇到错误', 'Flash Memo encountered an error'));
     this.contentEl.createEl('p', {text: this.message, cls: 'flash-memo-error-details'});
-    this.contentEl.createEl('p', {text: this.t('确认后将关闭速记窗口。未保存的修改可能丢失，已保存的画板文件会保留；之后可再次呼出画板。', 'Confirm to close the quick canvas window. Unsaved changes may be lost; saved drawing files will remain. You can open the canvas again afterward.')});
+    this.contentEl.createEl('p', {text: this.t('确认后将关闭速记窗口。未保存的修改可能丢失，已保存的笔记和画板文件会保留；之后可再次呼出速记。', 'Confirm to close the quick memo window. Unsaved changes may be lost; saved notes and drawings will remain. You can open the memo again afterward.')});
     new Setting(this.contentEl).addButton(button => {
       button.setButtonText(this.t('确认并关闭', 'Confirm and close')).setCta().onClick(() => this.confirm());
       button.buttonEl.focus();

@@ -431,3 +431,87 @@ test('deletion while starting the fade cancels the queued save of the deleted dr
  };
  await FlashMemo.prototype.hide.call(f.p,'blur');assert.equal(f.p.hidden,true);assert.equal(f.counts().hides,1);
 });
+
+function useNote(f){
+ const note={path:'Flash Memo/Quick note 1.md'};f.files.set(note.path,note);f.disk.add(note.path);
+ f.p.settings.file=note.path;f.leaf.view={file:note};return note;
+}
+
+test('creating a text note saves the drawing and opens the native Markdown editor without Excalidraw creation',async()=>{
+ const f=fixture(),order=[];f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};
+ f.leaf.view.forceSave=async()=>order.push('save');
+ f.p.drawingPlugin=()=>assert.fail('Notes do not need the drawing plugin');
+ const original=f.leaf.setViewState.bind(f.leaf);f.leaf.setViewState=async state=>{
+  assert.equal(state.type,'markdown');assert.equal(state.state.mode,'source');await original(state);order.push('switch');
+ };
+ await f.p.createNewCanvas('note');
+ assert.deepEqual(order,['save','switch']);assert.equal(f.p.settings.file,'Flash Memo/Quick note 1.md');
+ assert.equal(f.files.get(f.old.path),f.old);assert.equal(f.p.newCanvasButton.disabled,false);
+});
+
+test('cross-type switching flushes the correct editor before changing view',async()=>{
+ for(const fromNote of [false,true]){
+  const f=fixture(),note=useNote(f);f.p.hidden=false;let saves=0;
+  if(fromNote)f.leaf.view.save=async()=>{saves++;};
+  else {f.p.settings.file=f.old.path;f.leaf.view={file:f.old,forceSave:async()=>{saves++;}};}
+  const target=fromNote?f.old:note,original=f.leaf.setViewState.bind(f.leaf);
+  f.leaf.setViewState=async state=>{assert.equal(saves,1);assert.equal(state.type,fromNote?'excalidraw':'markdown');await original(state);};
+  await f.p.switchDrawing(target);assert.equal(f.p.settings.file,target.path);assert.equal(saves,1);
+ }
+});
+
+test('text note save failures block hiding and creating or switching files',async()=>{
+ for(const action of ['hide','create','switch']){
+  const f=fixture(),note=useNote(f);f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let reports=0;
+  f.p.report=()=>{reports++;};f.leaf.view.save=async()=>{throw Error('Disk full');};
+  if(action==='hide')await FlashMemo.prototype.hide.call(f.p,'close');
+  if(action==='create')await f.p.createNewCanvas('sketch');
+  if(action==='switch')await f.p.switchDrawing(f.old);
+  assert.equal(reports,1);assert.equal(f.p.hidden,false);assert.equal(f.p.settings.file,note.path);
+  assert.equal(f.counts().creates,0);assert.equal(f.leaf.view.file,note);
+ }
+});
+
+test('text notes flush on hiding and normal quit',async()=>{
+ for(const action of ['hide','quit']){
+  const f=fixture();useNote(f);f.p.hidden=false;let saves=0;f.leaf.view.save=async()=>{saves++;};
+  if(action==='hide')await FlashMemo.prototype.hide.call(f.p,'close');else await f.p.prepareQuit();
+  assert.equal(saves,1);assert.equal(f.p.hidden,action==='hide');
+ }
+});
+
+test('existing text notes reopen without requiring Excalidraw',async()=>{
+ const f=fixture(),note=useNote(f);f.p.drawingPlugin=()=>assert.fail('Must not require Excalidraw for Markdown');
+ await f.p.toggle();assert.equal(f.p.settings.file,note.path);assert.equal(f.counts().creates,0);assert.equal(f.counts().shows,1);
+});
+
+test('existing drawings still require Excalidraw and keep their file when it is disabled',async()=>{
+ const f=fixture();f.p.drawingPlugin=()=>{throw Error('Excalidraw is disabled');};
+ await assert.rejects(f.p.toggle(),/Excalidraw is disabled/);
+ assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);
+ assert.equal(f.counts().creates,0);assert.equal(f.counts().opens,0);assert.equal(f.p.opening,false);
+});
+
+test('a missing text note recovers as a note without changing or overwriting the old path',async()=>{
+ const f=fixture(),note=useNote(f);f.disk.delete(note.path);f.files.delete(note.path);
+ f.p.drawingPlugin=()=>assert.fail('Must not require Excalidraw for Markdown');
+ f.leaf.setViewState=async state=>{assert.equal(state.type,'markdown');f.leaf.view={file:f.files.get(state.state.file)};};
+ await f.p.toggle();assert.match(f.p.settings.file,/Quick note \d+\.md$/);assert.equal(f.counts().creates,1);
+});
+
+test('failed creation view change restores the saved text note and selection',async()=>{
+ const f=fixture(),note=useNote(f);f.p.hidden=false;f.p.newCanvasButton={disabled:false};f.p.report=()=>{};
+ f.leaf.view.save=async()=>{};
+ f.leaf.setViewState=async state=>{
+  f.leaf.view={file:f.files.get(state.state.file)};
+  if(state.type==='excalidraw')throw Error('View failed');
+ };
+ await f.p.createNewCanvas('sketch');assert.equal(f.p.settings.file,note.path);assert.equal(f.leaf.view.file,note);
+ assert.equal(f.p.creatingCanvas,false);assert.equal(f.p.newCanvasButton.disabled,false);
+});
+
+test('startup restoration accepts a dedicated Markdown memo window',async()=>{
+ const f=restorationFixture(),note=useNote(f);f.p.leaf=null;
+ f.leaf.getViewState=()=>({type:'markdown',state:{file:note.path}});
+ await f.p.restoreDrawingWindow();assert.equal(f.p.leaf,f.leaf);assert.equal(f.p.hidden,true);
+});
