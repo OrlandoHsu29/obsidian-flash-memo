@@ -19,6 +19,20 @@ import { SettingsStore } from './settings-store';
 import { withoutMemoPopout } from './workspace-layout';
 
 interface Bounds { x: number; y: number; width: number; height: number }
+/**
+ * Copy window bounds into a plain object. `electronWindow.getBounds()` returns
+ * an @electron/remote proxy that dies with its window, and reading it later
+ * throws "IPC method called after context was released".
+ */
+function plainBounds(value: Bounds | null | undefined): Bounds | null {
+  if (!value) return null;
+  try {
+    const { x, y, width, height } = value;
+    return [x, y, width, height].every(Number.isFinite) ? { x, y, width, height } : null;
+  } catch {
+    return null;
+  }
+}
 // Obsidian exposes this on desktop popouts, but it is outside the public API.
 interface DesktopWindow {
   isDestroyed(): boolean;
@@ -422,8 +436,8 @@ export default class FlashMemo extends Plugin {
     const doc = container.doc;
     doc.body.classList.add('flash-memo-window');
     native.setAlwaysOnTop(this.settings.pinned);
-    const bounds = this.settings.bounds;
-    if (bounds && Object.values(bounds).every(Number.isFinite)) {
+    const bounds = plainBounds(this.settings.bounds);
+    if (bounds) {
       const screen = container.win.screen;
       // Bring a remembered window back onto the current monitor after a display change.
       const width = Math.max(440, Math.min(bounds.width, screen.availWidth));
@@ -541,7 +555,7 @@ export default class FlashMemo extends Plugin {
       this.boundsTimer = setTimeout(() => {
         this.boundsTimer = null;
         if (!this.alive() || this.hidden) return;
-        this.settings.bounds = native!.getBounds();
+        this.settings.bounds = plainBounds(native!.getBounds());
         void this.saveData(this.settings).catch(error => this.report(error, true));
       }, 300);
     };
