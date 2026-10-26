@@ -25,7 +25,7 @@ export class SettingsStore {
         throw error;
       }
     }
-    if (corrupt) throw Error('Flash Memo settings are damaged and no valid backup is available.');
+    if (corrupt) throw Error('Glimmer Memo settings are damaged and no valid backup is available.');
     return { data: null, recovered: false };
   }
 

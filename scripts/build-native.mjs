@@ -12,5 +12,5 @@ await access(vcvars);
 await mkdir('native/build', {recursive:true});
 const quote = value => `"${value}"`;
 // Only fixed source/output names enter cmd.exe; no settings or user input.
-const command = `call ${quote(vcvars)} >nul && cl /nologo /O1 /W4 /WX /MT /DUNICODE /D_UNICODE native\\hotkey.c /Fo:native\\build\\hotkey.obj /Fe:native\\build\\flash-memo-hotkey.exe user32.lib shell32.lib /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /OPT:REF /OPT:ICF`;
+const command = `call ${quote(vcvars)} >nul && cl /nologo /O1 /W4 /WX /MT /DUNICODE /D_UNICODE native\\hotkey.c /Fo:native\\build\\hotkey.obj /Fe:native\\build\\glimmer-memo-hotkey.exe user32.lib shell32.lib /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /OPT:REF /OPT:ICF`;
 execFileSync(process.env.ComSpec || 'cmd.exe', ['/d','/s','/c',`"${command}"`], {cwd:root,stdio:'inherit',windowsHide:true,windowsVerbatimArguments:true});

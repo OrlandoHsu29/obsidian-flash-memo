@@ -1,9 +1,9 @@
 {
-  "id": "flash-memo",
-  "name": "Flash Memo",
-  "version": "0.1.2",
+  "id": "glimmer-memo",
+  "name": "Glimmer Memo",
+  "version": "0.2.0",
   "minAppVersion": "1.10.0",
-  "description": "Quick floating Excalidraw canvas with auto-hide and pinning.",
+  "description": "Floating Markdown notes and Excalidraw sketches with auto-hide and pinning.",
   "author": "OrlandoHsu29",
   "isDesktopOnly": true
 }

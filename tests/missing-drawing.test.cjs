@@ -9,13 +9,13 @@ class FakeModal {
  open(){this.opens++;}
  close(){this.onClose?.();}
 }
-const loaded=new Module('flash-memo-test.cjs');
+const loaded=new Module('glimmer-memo-test.cjs');
 loaded.require=id=>id==='obsidian'?{Plugin:Base,PluginSettingTab:Base,Modal:FakeModal,WorkspaceWindow:FakeWorkspaceWindow}:require(id);
-loaded._compile(buildSync({entryPoints:['src/main.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text,'flash-memo-test.cjs');
-const FlashMemo=loaded.exports.default;
+loaded._compile(buildSync({entryPoints:['src/main.ts'],bundle:true,platform:'node',format:'cjs',packages:'external',write:false}).outputFiles[0].text,'glimmer-memo-test.cjs');
+const GlimmerMemo=loaded.exports.default;
 
 function fixture(){
- const p=new FlashMemo(),old={path:'Flash Memo/Original.excalidraw.md'},files=new Map([[old.path,old],['Flash Memo',{children:[]}]]);
+ const p=new GlimmerMemo(),old={path:'Glimmer Memo/Original.excalidraw.md'},files=new Map([[old.path,old],['Glimmer Memo',{children:[]}]]);
  const disk=new Set([old.path]);let creates=0,shows=0,hides=0,opens=0;
  const native={isDestroyed:()=>false,isFocused:()=>false,setAlwaysOnTop(){},hide(){hides++;}};
  const leaf={id:'test-leaf',view:{file:old},async setViewState(state){this.view={file:files.get(state.state.file)};},detach(){}};
@@ -33,7 +33,7 @@ function fixture(){
 test('deleted drawing is recreated and replaces the empty view in the surviving popout',async()=>{
  const f=fixture();f.disk.delete(f.old.path);f.files.delete(f.old.path);f.leaf.view={};
  await f.p.toggle();
- assert.equal(f.p.settings.file,'Flash Memo/Quick sketch 1.excalidraw.md');
+ assert.equal(f.p.settings.file,'Glimmer Memo/Quick sketch 1.excalidraw.md');
  assert.equal(f.leaf.view.file.path,f.p.settings.file);
  assert.deepEqual(f.counts(),{creates:1,shows:1,hides:0,opens:0});
 });
@@ -45,7 +45,7 @@ test('physical deletion is detected even before the vault file cache catches up'
 test('missing file also recovers when the old popout was closed',async()=>{
  const f=fixture();f.disk.delete(f.old.path);f.files.delete(f.old.path);f.p.leaf=null;f.p.native=null;
  await f.p.toggle();
- assert.equal(f.p.settings.file,'Flash Memo/Quick sketch 1.excalidraw.md');
+ assert.equal(f.p.settings.file,'Glimmer Memo/Quick sketch 1.excalidraw.md');
  assert.equal(f.counts().opens,1);assert.equal(f.p.opening,false);
 });
 test('existing drawings retain their path and normal show/hide toggle behavior',async()=>{
@@ -80,13 +80,13 @@ test('delete events for unrelated files or an already replaced file do not hide 
 test('hiding after physical deletion skips saving before the delete event arrives',async()=>{
  const f=fixture();f.p.hidden=false;f.disk.delete(f.old.path);
  f.leaf.view.forceSave=()=>{throw Error('Must not save a deleted file');};
- await FlashMemo.prototype.hide.call(f.p,'close');
+ await GlimmerMemo.prototype.hide.call(f.p,'close');
  assert.equal(f.p.hidden,true);assert.equal(f.counts().hides,1);
 });
 test('deletion during a pending save cancels the stale error and closes the canvas',async()=>{
  const f=fixture();f.p.hidden=false;let rejectSave,reports=0;f.p.report=()=>{reports++;};
  f.leaf.view.forceSave=()=>new Promise((_,reject)=>{rejectSave=reject;});
- const hiding=FlashMemo.prototype.hide.call(f.p,'close');
+ const hiding=GlimmerMemo.prototype.hide.call(f.p,'close');
  while(!rejectSave)await Promise.resolve();
  f.files.delete(f.old.path);f.disk.delete(f.old.path);f.p.onDrawingDeleted(f.old.path);
  rejectSave(Error('ENOENT'));await hiding;
@@ -95,11 +95,11 @@ test('deletion during a pending save cancels the stale error and closes the canv
 test('save errors for an existing drawing still keep the window available',async()=>{
  const f=fixture();f.p.hidden=false;let reports=0;f.p.report=()=>{reports++;};
  f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
- await FlashMemo.prototype.hide.call(f.p,'close');
+ await GlimmerMemo.prototype.hide.call(f.p,'close');
  assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);assert.equal(reports,1);
 });
 test('canvas switching saves the source before opening and persisting the target',async()=>{
- const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ const f=fixture();f.p.hidden=false;const target={path:'Glimmer Memo/Other.excalidraw.md'};
  f.files.set(target.path,target);f.disk.add(target.path);const order=[];
  f.leaf.view.forceSave=async()=>{order.push('save');};
  const setViewState=f.leaf.setViewState.bind(f.leaf);
@@ -110,7 +110,7 @@ test('canvas switching saves the source before opening and persisting the target
  assert.equal(f.leaf.view.file,target);assert.equal(f.p.switching,false);
 });
 test('failed source save aborts switching and preserves the source drawing',async()=>{
- const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ const f=fixture();f.p.hidden=false;const target={path:'Glimmer Memo/Other.excalidraw.md'};
  f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
  f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
  await f.p.switchDrawing(target);
@@ -118,14 +118,14 @@ test('failed source save aborts switching and preserves the source drawing',asyn
  assert.equal(reports,1);assert.equal(f.p.switching,false);
 });
 test('target deleted during source save cannot be opened',async()=>{
- const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ const f=fixture();f.p.hidden=false;const target={path:'Glimmer Memo/Other.excalidraw.md'};
  f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
  f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{f.files.delete(target.path);f.disk.delete(target.path);};
  await f.p.switchDrawing(target);
  assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);assert.equal(reports,1);
 });
 test('failed target view restores the source and keeps its persisted path',async()=>{
- const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ const f=fixture();f.p.hidden=false;const target={path:'Glimmer Memo/Other.excalidraw.md'};
  f.files.set(target.path,target);f.disk.add(target.path);f.p.report=()=>{};
  f.leaf.view.forceSave=async()=>{};
  const setViewState=f.leaf.setViewState.bind(f.leaf);
@@ -134,7 +134,7 @@ test('failed target view restores the source and keeps its persisted path',async
  assert.equal(f.p.settings.file,f.old.path);assert.equal(f.leaf.view.file,f.old);assert.equal(f.p.switching,false);
 });
 test('deleting source during a switch keeps the window hidden without reporting a stale save error',async()=>{
- const f=fixture();f.p.hidden=false;const target={path:'Flash Memo/Other.excalidraw.md'};
+ const f=fixture();f.p.hidden=false;const target={path:'Glimmer Memo/Other.excalidraw.md'};
  f.files.set(target.path,target);f.disk.add(target.path);let reports=0;
  f.p.report=()=>{reports++;};f.leaf.view.forceSave=async()=>{
   f.files.delete(f.old.path);f.disk.delete(f.old.path);f.p.onDrawingDeleted(f.old.path);throw Error('ENOENT');
@@ -168,7 +168,7 @@ test('an open recovery dialog blocks further hide/save attempts',async t=>{
  t.mock.method(console,'error',()=>{});
  const f=fixture();let saves=0;f.leaf.view.forceSave=async()=>{saves++;};
  f.p.report(Error('Save failed'),true);
- await FlashMemo.prototype.hide.call(f.p,'close');
+ await GlimmerMemo.prototype.hide.call(f.p,'close');
  assert.equal(saves,0);assert.equal(f.p.hidden,false);assert.ok(f.p.errorDialog);
 });
 test('recovery releases plugin state even if window and leaf cleanup throw',t=>{
@@ -198,8 +198,8 @@ test('recovery releases the workspace leaf before native destruction for tray bo
 test('duplicate hide requests share the pending save',async()=>{
  const f=fixture();f.p.hidden=false;let finish,saves=0;
  f.leaf.view.forceSave=()=>{saves++;return new Promise(resolve=>{finish=resolve;});};
- const first=FlashMemo.prototype.hide.call(f.p,'close');while(!finish)await Promise.resolve();
- await FlashMemo.prototype.hide.call(f.p,'close');assert.equal(saves,1);finish();await first;assert.equal(f.p.hidden,true);
+ const first=GlimmerMemo.prototype.hide.call(f.p,'close');while(!finish)await Promise.resolve();
+ await GlimmerMemo.prototype.hide.call(f.p,'close');assert.equal(saves,1);finish();await first;assert.equal(f.p.hidden,true);
 });
 test('global-off mode registers one local shortcut and cleans it up for recording or global mode',()=>{
  const f=fixture(),active=new Set();let triggers=0;
@@ -221,7 +221,7 @@ test('exit stays above the activated app through saving and fade, then releases 
  f.leaf.view.forceSave=async()=>{assert.equal(f.p.hideLayerHeld,true);order.push('save');};
  f.p.windowFade.fadeOut=async()=>{assert.equal(f.p.hideLayerHeld,true);order.push('fade');return true;};
  f.p.native.hide=()=>order.push('hide');
- await FlashMemo.prototype.hide.call(f.p,'blur');
+ await GlimmerMemo.prototype.hide.call(f.p,'blur');
  assert.deepEqual(order,['topmost','fade','save','hide','normal']);
  assert.equal(f.p.settings.pinned,false);assert.equal(f.p.hideLayerHeld,false);
 });
@@ -230,7 +230,7 @@ test('save failure releases temporary topmost and keeps the drawing available',a
  const f=fixture(),layers=[];f.p.hidden=false;f.p.report=()=>{};
  f.p.native.setAlwaysOnTop=value=>layers.push(value);
  f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
- await FlashMemo.prototype.hide.call(f.p,'blur');
+ await GlimmerMemo.prototype.hide.call(f.p,'blur');
  assert.deepEqual(layers,[true,false]);assert.equal(f.p.hidden,false);assert.equal(f.p.hideLayerHeld,false);
 });
 
@@ -238,8 +238,8 @@ test('reopening during save cancels hiding without dropping the layer needed for
  const f=fixture(),layers=[];f.p.hidden=false;let finish;
  f.p.native.setAlwaysOnTop=value=>layers.push(value);f.p.native.show=()=>{};f.p.native.focus=()=>{};
  f.leaf.view.forceSave=()=>new Promise(resolve=>{finish=resolve;});
- const hiding=FlashMemo.prototype.hide.call(f.p,'blur');while(!finish)await Promise.resolve();
- FlashMemo.prototype.show.call(f.p);finish();await hiding;
+ const hiding=GlimmerMemo.prototype.hide.call(f.p,'blur');while(!finish)await Promise.resolve();
+ GlimmerMemo.prototype.show.call(f.p);finish();await hiding;
  assert.deepEqual(layers,[true]);assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);assert.equal(f.p.settings.pinned,false);
 });
 
@@ -247,7 +247,7 @@ test('hiding a pinned drawing preserves the permanent pin setting and native lay
  const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;
  f.p.native.setAlwaysOnTop=()=>assert.fail('Permanent pin must not be changed');
  f.leaf.view.forceSave=async()=>{};f.p.windowFade.fadeOut=async()=>true;
- await FlashMemo.prototype.hide.call(f.p,'close');
+ await GlimmerMemo.prototype.hide.call(f.p,'close');
  assert.equal(f.p.hidden,true);assert.equal(f.p.settings.pinned,true);
 });
 
@@ -255,11 +255,11 @@ test('auto-hide is prepared before showing and does not raise the window again d
  const f=fixture(),order=[];
  f.p.native.setAlwaysOnTop=value=>order.push(value?'topmost':'normal');
  f.p.native.show=()=>order.push('show');f.p.native.focus=()=>order.push('focus');
- FlashMemo.prototype.show.call(f.p);
+ GlimmerMemo.prototype.show.call(f.p);
  f.leaf.view.forceSave=async()=>order.push('save');
  f.p.windowFade.fadeOut=async()=>{order.push('fade');return true;};
  f.p.native.hide=()=>order.push('hide');
- await FlashMemo.prototype.hide.call(f.p,'blur');
+ await GlimmerMemo.prototype.hide.call(f.p,'blur');
  assert.deepEqual(order,['topmost','show','focus','fade','save','hide','normal']);
  assert.equal(f.p.settings.pinned,false);
 });
@@ -276,7 +276,7 @@ test('disabling auto-hide releases the prepared layer and enabling it prepares a
 test('showing with auto-hide disabled does not prepare a temporary topmost layer',()=>{
  const f=fixture();f.p.settings.hideOnBlur=false;
  f.p.native.setAlwaysOnTop=()=>assert.fail('Auto-hide is disabled');f.p.native.show=()=>{};f.p.native.focus=()=>{};
- FlashMemo.prototype.show.call(f.p);assert.equal(f.p.hideLayerHeld,false);
+ GlimmerMemo.prototype.show.call(f.p);assert.equal(f.p.hideLayerHeld,false);
 });
 
 function restorationFixture(){
@@ -375,8 +375,8 @@ test('new canvas saves the old drawing before creating, persisting and switching
  const setState=f.leaf.setViewState.bind(f.leaf);f.leaf.setViewState=async state=>{order.push('switch');await setState(state);};
  f.p.saveData=async()=>order.push('persist');
  await f.p.createNewCanvas();
- assert.deepEqual(order,['save','create','persist','switch']);assert.equal(f.p.settings.file,'Flash Memo/Quick sketch 1.excalidraw.md');
- assert.equal(f.old.path,'Flash Memo/Original.excalidraw.md');assert.ok(f.files.has(f.old.path));assert.equal(f.p.newCanvasButton.disabled,false);
+ assert.deepEqual(order,['save','create','persist','switch']);assert.equal(f.p.settings.file,'Glimmer Memo/Quick sketch 1.excalidraw.md');
+ assert.equal(f.old.path,'Glimmer Memo/Original.excalidraw.md');assert.ok(f.files.has(f.old.path));assert.equal(f.p.newCanvasButton.disabled,false);
 });
 test('a failed source save prevents new canvas creation and keeps the original selected',async()=>{
  const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let reports=0;
@@ -399,7 +399,7 @@ test('fade starts before a slow save completes, but native hiding waits for that
  const f=fixture();f.p.hidden=false;let saveDone,fadeDone,started=false;
  f.leaf.view.forceSave=()=>new Promise(resolve=>saveDone=resolve);
  f.p.windowFade.fadeOut=()=>{started=true;return new Promise(resolve=>fadeDone=resolve);};
- const pending=FlashMemo.prototype.hide.call(f.p,'blur');while(!saveDone)await Promise.resolve();
+ const pending=GlimmerMemo.prototype.hide.call(f.p,'blur');while(!saveDone)await Promise.resolve();
  assert.equal(started,true);assert.equal(f.counts().hides,0);
  fadeDone(true);await Promise.resolve();assert.equal(f.counts().hides,0);
  saveDone();await pending;assert.equal(f.counts().hides,1);
@@ -409,7 +409,7 @@ test('a fast save also waits for the visible fade to complete',async()=>{
  const f=fixture();f.p.hidden=false;let fadeDone,saved=false;
  f.leaf.view.forceSave=async()=>{saved=true;};
  f.p.windowFade.fadeOut=()=>new Promise(resolve=>fadeDone=resolve);
- const pending=FlashMemo.prototype.hide.call(f.p,'close');while(!saved)await Promise.resolve();
+ const pending=GlimmerMemo.prototype.hide.call(f.p,'close');while(!saved)await Promise.resolve();
  assert.equal(f.counts().hides,0);fadeDone(true);await pending;assert.equal(f.counts().hides,1);
 });
 
@@ -419,7 +419,7 @@ test('a failed parallel save cancels the unfinished fade before reporting the er
  f.p.windowFade.cancel=()=>{canceled=true;fadeDone?.(false);};
  f.leaf.view.forceSave=async()=>{throw Error('Disk full');};
  f.p.report=()=>{assert.equal(canceled,true);reports++;};
- await FlashMemo.prototype.hide.call(f.p,'blur');
+ await GlimmerMemo.prototype.hide.call(f.p,'blur');
  assert.equal(reports,1);assert.equal(f.p.hidden,false);assert.equal(f.counts().hides,0);
 });
 
@@ -429,11 +429,11 @@ test('deletion while starting the fade cancels the queued save of the deleted dr
  f.p.windowFade.fadeOut=async()=>{
   f.files.delete(f.old.path);f.disk.delete(f.old.path);f.p.onDrawingDeleted(f.old.path);return false;
  };
- await FlashMemo.prototype.hide.call(f.p,'blur');assert.equal(f.p.hidden,true);assert.equal(f.counts().hides,1);
+ await GlimmerMemo.prototype.hide.call(f.p,'blur');assert.equal(f.p.hidden,true);assert.equal(f.counts().hides,1);
 });
 
 function useNote(f){
- const note={path:'Flash Memo/Quick note 1.md'};f.files.set(note.path,note);f.disk.add(note.path);
+ const note={path:'Glimmer Memo/Quick note 1.md'};f.files.set(note.path,note);f.disk.add(note.path);
  f.p.settings.file=note.path;f.leaf.view={file:note};return note;
 }
 
@@ -445,7 +445,7 @@ test('creating a text note saves the drawing and opens the native Markdown edito
   assert.equal(state.type,'markdown');assert.equal(state.state.mode,'source');await original(state);order.push('switch');
  };
  await f.p.createNewCanvas('note');
- assert.deepEqual(order,['save','switch']);assert.equal(f.p.settings.file,'Flash Memo/Quick note 1.md');
+ assert.deepEqual(order,['save','switch']);assert.equal(f.p.settings.file,'Glimmer Memo/Quick note 1.md');
  assert.equal(f.files.get(f.old.path),f.old);assert.equal(f.p.newCanvasButton.disabled,false);
 });
 
@@ -464,7 +464,7 @@ test('text note save failures block hiding and creating or switching files',asyn
  for(const action of ['hide','create','switch']){
   const f=fixture(),note=useNote(f);f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let reports=0;
   f.p.report=()=>{reports++;};f.leaf.view.save=async()=>{throw Error('Disk full');};
-  if(action==='hide')await FlashMemo.prototype.hide.call(f.p,'close');
+  if(action==='hide')await GlimmerMemo.prototype.hide.call(f.p,'close');
   if(action==='create')await f.p.createNewCanvas('sketch');
   if(action==='switch')await f.p.switchDrawing(f.old);
   assert.equal(reports,1);assert.equal(f.p.hidden,false);assert.equal(f.p.settings.file,note.path);
@@ -475,7 +475,7 @@ test('text note save failures block hiding and creating or switching files',asyn
 test('text notes flush on hiding and normal quit',async()=>{
  for(const action of ['hide','quit']){
   const f=fixture();useNote(f);f.p.hidden=false;let saves=0;f.leaf.view.save=async()=>{saves++;};
-  if(action==='hide')await FlashMemo.prototype.hide.call(f.p,'close');else await f.p.prepareQuit();
+  if(action==='hide')await GlimmerMemo.prototype.hide.call(f.p,'close');else await f.p.prepareQuit();
   assert.equal(saves,1);assert.equal(f.p.hidden,action==='hide');
  }
 });

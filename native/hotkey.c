@@ -1,4 +1,4 @@
-// Flash Memo: a blocking Win32 hotkey listener. No window, hooks, or polling.
+// Glimmer Memo: a blocking Win32 hotkey listener. No window, hooks, or polling.
 // The stdin pipe is its lifetime: closing it also stops the message loop.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

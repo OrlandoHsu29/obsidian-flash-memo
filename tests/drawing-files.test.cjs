@@ -25,9 +25,9 @@ test('new quick sketches start at 1 and skip occupied numbered paths',()=>{
  assert.equal(availableDrawingPath(f.app,'Inbox','Quick sketch','.excalidraw',undefined,true),'Inbox/Quick sketch 1.excalidraw');
 });
 test('memo picker lists Markdown and drawings inside the configured folder, excluding other files and folders',()=>{
- const paths=['Flash Memo/Quick sketch 10.excalidraw.md','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Archive/Old.excalidraw','Flash Memo/Note.md','Flash Memo/image.png','Flash Memos/Other.excalidraw.md','Elsewhere/Other.excalidraw.md'];
- assert.deepEqual(drawingFiles({vault:{getFiles:()=>paths.map(path=>({path}))}},'Flash Memo').map(f=>f.path),[
-  'Flash Memo/Archive/Old.excalidraw','Flash Memo/Note.md','Flash Memo/Quick sketch 2.excalidraw.md','Flash Memo/Quick sketch 10.excalidraw.md'
+ const paths=['Glimmer Memo/Quick sketch 10.excalidraw.md','Glimmer Memo/Quick sketch 2.excalidraw.md','Glimmer Memo/Archive/Old.excalidraw','Glimmer Memo/Note.md','Glimmer Memo/image.png','Glimmer Memos/Other.excalidraw.md','Elsewhere/Other.excalidraw.md'];
+ assert.deepEqual(drawingFiles({vault:{getFiles:()=>paths.map(path=>({path}))}},'Glimmer Memo').map(f=>f.path),[
+  'Glimmer Memo/Archive/Old.excalidraw','Glimmer Memo/Note.md','Glimmer Memo/Quick sketch 2.excalidraw.md','Glimmer Memo/Quick sketch 10.excalidraw.md'
  ]);
 });
 

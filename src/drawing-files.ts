@@ -12,7 +12,7 @@ export async function createNote(app: App, folder: string): Promise<TFile> {
 }
 
 export function drawingFolder(value: string): string {
-  const path=(value.trim() || 'Flash Memo').replace(/\\/g,'/').replace(/\/+$/,'');
+  const path=(value.trim() || 'Glimmer Memo').replace(/\\/g,'/').replace(/\/+$/,'');
   if (!path || path.startsWith('/') || path.split('/').some(part=>part==='..'||part.includes(':'))) throw Error('invalid-folder');
   return path.split('/').filter(part=>part&&part!=='.').join('/');
 }

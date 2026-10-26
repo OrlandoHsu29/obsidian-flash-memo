@@ -7,7 +7,7 @@ const {spawn,execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 let GlobalHotkey,parseHotkey,hotkeyFromEvent,localHotkey;
 const output=path.resolve('.test-build/global-hotkey.cjs');
-const helper=path.resolve('native/build/flash-memo-hotkey.exe');
+const helper=path.resolve('native/build/glimmer-memo-hotkey.exe');
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await wait(20);}assert.fail('Timed out waiting for helper state');}
 before(async()=>{await build({entryPoints:['src/global-hotkey.ts'],bundle:true,platform:'node',format:'cjs',outfile:output});({GlobalHotkey,parseHotkey,hotkeyFromEvent,localHotkey}=require(output));});

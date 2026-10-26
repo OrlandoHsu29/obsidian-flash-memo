@@ -25,31 +25,31 @@ export class DrawingPicker {
   show() {
     if (this.list) return;
     const list = this.doc.createElement('div');
-    list.className = 'suggestion-container flash-memo-picker';
-    list.id = 'flash-memo-drawing-picker';
+    list.className = 'suggestion-container glimmer-memo-picker';
+    list.id = 'glimmer-memo-drawing-picker';
     list.setAttribute('role', 'listbox');
     list.setAttribute('aria-label', this.t('选择速记', 'Choose memo'));
     const files = this.files();
     for (const file of files) {
-      const item = list.createEl('button', {cls: 'suggestion-item flash-memo-picker-item'});
+      const item = list.createEl('button', {cls: 'suggestion-item glimmer-memo-picker-item'});
       const type = memoType(file.path);
-      item.classList.add(`flash-memo-picker-${type}`);
+      item.classList.add(`glimmer-memo-picker-${type}`);
       item.setAttribute('aria-label', `${this.t(type === 'sketch' ? '画板' : '笔记', type === 'sketch' ? 'Canvas' : 'Note')}: ${drawingName(file.path).name}`);
       item.type = 'button'; item.setAttribute('role', 'option');
       const selected = file.path === this.current();
       item.setAttribute('aria-selected', String(selected));
-      const icon = item.createSpan({cls: 'flash-memo-picker-icon'});
+      const icon = item.createSpan({cls: 'glimmer-memo-picker-icon'});
       setIcon(icon, type === 'sketch' ? 'pencil-ruler' : 'file-pen-line');
       icon.setAttribute('aria-hidden', 'true');
-      const label = item.createSpan({cls: 'flash-memo-picker-label'});
-      label.createSpan({text: drawingName(file.path).name, cls: 'flash-memo-picker-name'});
-      if (selected) label.createSpan({text: '✓', cls: 'flash-memo-picker-check'}).setAttribute('aria-hidden', 'true');
+      const label = item.createSpan({cls: 'glimmer-memo-picker-label'});
+      label.createSpan({text: drawingName(file.path).name, cls: 'glimmer-memo-picker-name'});
+      if (selected) label.createSpan({text: '✓', cls: 'glimmer-memo-picker-check'}).setAttribute('aria-hidden', 'true');
       item.setAttribute('data-tooltip-position', 'top');
       item.setAttribute('aria-description', file.path);
       const modified = new Date(file.stat.mtime), pad = (value: number) => String(value).padStart(2, '0');
       const timestamp = Number.isFinite(modified.getTime())
         ? `${modified.getFullYear()}-${pad(modified.getMonth() + 1)}-${pad(modified.getDate())} ${pad(modified.getHours())}:${pad(modified.getMinutes())}` : '—';
-      const time = item.createEl('time', {text: timestamp, cls: 'flash-memo-picker-modified'});
+      const time = item.createEl('time', {text: timestamp, cls: 'glimmer-memo-picker-modified'});
       if (Number.isFinite(modified.getTime())) time.dateTime = modified.toISOString();
       time.setAttribute('aria-label', this.t(`最后修改：${timestamp}`, `Last modified: ${timestamp}`));
       item.addEventListener('click', () => { this.hide(); this.select(file); });

@@ -75,9 +75,9 @@ interface MemoSettings {
   globalHotkeyEnabled: boolean;
   globalHotkey: string;
 }
-const DEFAULTS: MemoSettings = { folder: 'Flash Memo', file: '', leafId: '', pinned: false, hideOnBlur: true, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
+const DEFAULTS: MemoSettings = { folder: 'Glimmer Memo', file: '', leafId: '', pinned: false, hideOnBlur: true, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
 
-export default class FlashMemo extends Plugin {
+export default class GlimmerMemo extends Plugin {
   settings: MemoSettings = { ...DEFAULTS };
   private leaf: WorkspaceLeaf | null = null;
   private popout: WorkspaceWindow | null = null;
@@ -127,13 +127,13 @@ export default class FlashMemo extends Plugin {
   private getSettingsStore() {
     if (this.settingsStore) return this.settingsStore;
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir) throw Error('Flash Memo requires a desktop vault.');
+    if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir) throw Error('Glimmer Memo requires a desktop vault.');
     return this.settingsStore = new SettingsStore(join(adapter.getBasePath(), this.manifest.dir, 'data.json'));
   }
 
   async loadData() {
     const saved = await this.getSettingsStore().load();
-    if (saved.recovered) new Notice(this.t('Flash Memo 设置文件异常，已从有效备份恢复。', 'Flash Memo settings were damaged and have been restored from a valid backup.'));
+    if (saved.recovered) new Notice(this.t('Glimmer Memo 设置文件异常，已从有效备份恢复。', 'Glimmer Memo settings were damaged and have been restored from a valid backup.'));
     return saved.data;
   }
 
@@ -159,7 +159,7 @@ export default class FlashMemo extends Plugin {
     this.addRibbonIcon('pencil-ruler', this.t('速记窗口', 'Quick memo'), () => {
       this.triggerToggle();
     });
-    this.registerObsidianProtocolHandler('flash-memo', params => {
+    this.registerObsidianProtocolHandler('glimmer-memo', params => {
       if (params.vault && params.vault !== this.app.vault.getName()) return;
       this.triggerToggle();
     });
@@ -284,7 +284,7 @@ export default class FlashMemo extends Plugin {
     if (!(adapter instanceof FileSystemAdapter) || !this.manifest.dir || this.disposed) return false;
     const handle = (window as Window & { electronWindow?: DesktopWindow }).electronWindow?.getNativeWindowHandle?.();
     const owner = handle && handle.length >= 8 ? handle.readBigUInt64LE().toString() : '0';
-    const executable = join(adapter.getBasePath(), this.manifest.dir, 'flash-memo-hotkey.exe');
+    const executable = join(adapter.getBasePath(), this.manifest.dir, 'glimmer-memo-hotkey.exe');
     const success = await this.globalHotkey.configure(this.settings.globalHotkeyEnabled && (!this.recording || candidate !== undefined), candidate ?? this.settings.globalHotkey, executable, owner);
     if (success) this.configureLocalHotkey();
     return success;
@@ -429,7 +429,7 @@ export default class FlashMemo extends Plugin {
 
   private async attach(leaf: WorkspaceLeaf) {
     const container = leaf.getContainer();
-    if (!(container instanceof WorkspaceWindow)) throw Error('Flash Memo: a desktop popout window is required.');
+    if (!(container instanceof WorkspaceWindow)) throw Error('Glimmer Memo: a desktop popout window is required.');
     // Creating a popout and initializing its renderer are asynchronous.
     let native: DesktopWindow | undefined;
     for (let i = 0; i < 60 && !this.disposed; i++) {
@@ -444,7 +444,7 @@ export default class FlashMemo extends Plugin {
     this.native = native;
     this.keepRendererAwake();
     const doc = container.doc;
-    doc.body.classList.add('flash-memo-window');
+    doc.body.classList.add('glimmer-memo-window');
     native.setAlwaysOnTop(this.settings.pinned);
     const bounds = plainBounds(this.settings.bounds);
     if (bounds) {
@@ -460,13 +460,13 @@ export default class FlashMemo extends Plugin {
       native.setBounds({...current,width:760,height:600});
     }
     const bar = doc.createElement('div');
-    bar.className = 'flash-memo-bar';
-    const title = bar.createSpan({text: 'Flash memo', cls: 'flash-memo-title'});
+    bar.className = 'glimmer-memo-bar';
+    const title = bar.createSpan({text: 'Glimmer Memo', cls: 'glimmer-memo-title'});
     title.setAttribute('aria-hidden', 'true');
-    const nameContainer = bar.createDiv({cls: 'flash-memo-name-container'});
-    this.nameButton = nameContainer.createEl('button', {cls: 'flash-memo-name'});
+    const nameContainer = bar.createDiv({cls: 'glimmer-memo-name-container'});
+    this.nameButton = nameContainer.createEl('button', {cls: 'glimmer-memo-name'});
     this.nameButton.setAttribute('aria-label', this.t('单击选择笔记或画板，双击修改文件名', 'Click to choose a note or canvas; double-click to rename'));
-    const nameInput = nameContainer.createEl('input', {cls: 'flash-memo-name-input', type: 'text'});
+    const nameInput = nameContainer.createEl('input', {cls: 'glimmer-memo-name-input', type: 'text'});
     nameInput.hidden = true;
     nameInput.setAttribute('aria-label', this.t('文件名（不含扩展名）', 'File name (without extension)'));
     const finishEdit = () => { nameInput.hidden = true; if (this.nameButton) this.nameButton.hidden = false; };
@@ -513,17 +513,17 @@ export default class FlashMemo extends Plugin {
     nameInput.addEventListener('blur', onNameBlur);
     nameInput.addEventListener('keydown', onNameKey);
     this.updateName();
-    const actions = bar.createDiv({cls: 'flash-memo-actions'});
-    this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon flash-memo-new-canvas'});
+    const actions = bar.createDiv({cls: 'glimmer-memo-actions'});
+    this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon glimmer-memo-new-canvas'});
     setIcon(this.newCanvasButton, 'file-plus');
     const newCanvasLabel = this.t('新建笔记或画板', 'Create a note or canvas');
     this.newCanvasButton.setAttribute('aria-label',newCanvasLabel);
     const onNewCanvas = () => this.runWindowAction(() => this.confirmNewCanvas());
     this.newCanvasButton.addEventListener('click',onNewCanvas);
-    this.pinButton = actions.createEl('button', {cls: 'clickable-icon flash-memo-pin'});
+    this.pinButton = actions.createEl('button', {cls: 'clickable-icon glimmer-memo-pin'});
     const onPin = () => this.runWindowAction(() => this.togglePin());
     this.pinButton.addEventListener('click', onPin);
-    const closeButton = actions.createEl('button', {cls: 'clickable-icon flash-memo-close'});
+    const closeButton = actions.createEl('button', {cls: 'clickable-icon glimmer-memo-close'});
     setIcon(closeButton, 'x');
     closeButton.setAttribute('aria-label', this.t('关闭', 'Close'));
     const onClose = () => this.requestHide('close');
@@ -551,7 +551,7 @@ export default class FlashMemo extends Plugin {
       this.restoreWindowOpacity(true); this.prepareHideLayer();
     });
     const onNativeShow = () => this.runWindowAction(() => {
-      // Tray restores all known windows. A canvas hidden by Flash Memo should
+      // Tray restores all known windows. A canvas hidden by Glimmer Memo should
       // stay hidden until the user explicitly opens it.
       if (this.hidden && !this.errorDialog) native!.hide();
     });
@@ -597,7 +597,7 @@ export default class FlashMemo extends Plugin {
       nameInput.removeEventListener('blur', onNameBlur);
       nameInput.removeEventListener('keydown', onNameKey);
       this.newCanvasButton?.removeEventListener('click',onNewCanvas); this.newCanvasButton = null;
-      bar.remove(); doc.body.classList.remove('flash-memo-window');
+      bar.remove(); doc.body.classList.remove('glimmer-memo-window');
     };
     this.app.workspace.requestSaveLayout();
   }
@@ -914,13 +914,13 @@ export default class FlashMemo extends Plugin {
   private report(error: unknown, closeWindow = false) {
     const code = error instanceof Error ? error.message : String(error);
     const message = code==='invalid-folder' ? this.t('请填写相对于知识库根目录的文件夹路径。','Enter a folder path relative to the vault root.') : code==='folder-is-file' ? this.t('指定路径已存在同名文件，请更换文件夹路径。','A file already exists at the folder path. Choose another folder.') : code;
-    console.error('Flash Memo', error);
+    console.error('Glimmer Memo', error);
     if (this.disposed || this.errorClosing) return;
-    if (!closeWindow) { new Notice(`Flash Memo: ${message}`); return; }
+    if (!closeWindow) { new Notice(`Glimmer Memo: ${message}`); return; }
     if (this.errorDialog) return;
     this.hideGeneration++; this.hiding = false; this.clearBlur();
     for (const cleanup of [() => this.drawingPicker?.hide(), () => this.cancelNameEdit?.(), () => this.newCanvasDialog?.close()]) {
-      try { cleanup(); } catch (cleanupError) { console.error('Flash Memo error cleanup', cleanupError); }
+      try { cleanup(); } catch (cleanupError) { console.error('Glimmer Memo error cleanup', cleanupError); }
     }
     const dialog = new CanvasError(this.app, (zh,en) => this.t(zh,en), message, this.popout?.doc, confirmed => {
       if (this.errorDialog !== dialog) return;
@@ -929,7 +929,7 @@ export default class FlashMemo extends Plugin {
       if (confirmed) this.closeFailedWindow();
     });
     this.errorDialog = dialog;
-    try { if (this.alive()) this.show(); } catch (showError) { console.error('Flash Memo error window', showError); }
+    try { if (this.alive()) this.show(); } catch (showError) { console.error('Glimmer Memo error window', showError); }
     dialog.open();
   }
 
@@ -940,26 +940,26 @@ export default class FlashMemo extends Plugin {
     // Recovery must not call hide()/forceSave(): the failing save may be what
     // prevented the normal close button from working in the first place.
     try {
-      try { this.reset(); } catch (error) { console.error('Flash Memo cleanup', error); }
+      try { this.reset(); } catch (error) { console.error('Glimmer Memo cleanup', error); }
       this.leaf = null; this.native = null; this.popout = null;
       this.clearBlur();
       if (this.boundsTimer) clearTimeout(this.boundsTimer);
       this.boundsTimer = null;
       // Let Obsidian and Tray release their popout bookkeeping before falling
       // back to native destruction if normal leaf cleanup cannot close it.
-      try { leaf?.detach(); } catch (error) { console.error('Flash Memo leaf cleanup', error); }
+      try { leaf?.detach(); } catch (error) { console.error('Glimmer Memo leaf cleanup', error); }
       try {
         if (native && !native.isDestroyed()) {
           if (native.destroy) native.destroy(); else native.hide();
         }
       } catch (error) {
-        console.error('Flash Memo window close', error);
+        console.error('Glimmer Memo window close', error);
         try { native?.hide(); } catch { /* Continue releasing the workspace leaf. */ }
       }
-      try { this.restoreThrottling(); } catch (error) { console.error('Flash Memo renderer cleanup', error); }
+      try { this.restoreThrottling(); } catch (error) { console.error('Glimmer Memo renderer cleanup', error); }
       this.settings.leafId = '';
-      try { void this.saveData(this.settings).catch(error => console.error('Flash Memo recovery settings', error)); }
-      catch (error) { console.error('Flash Memo recovery settings', error); }
+      try { void this.saveData(this.settings).catch(error => console.error('Glimmer Memo recovery settings', error)); }
+      catch (error) { console.error('Glimmer Memo recovery settings', error); }
     } finally { this.errorClosing = false; }
   }
 
@@ -981,7 +981,7 @@ export default class FlashMemo extends Plugin {
 
 class MemoSettingTab extends PluginSettingTab {
   private statusEl: HTMLElement | null = null;
-  constructor(app: App, private plugin: FlashMemo) { super(app, plugin); }
+  constructor(app: App, private plugin: GlimmerMemo) { super(app, plugin); }
   hide() { this.plugin.cancelHotkeyRecording(); super.hide(); }
   updateStatus() {
     if (!this.statusEl?.isConnected) return;
@@ -992,10 +992,10 @@ class MemoSettingTab extends PluginSettingTab {
   display() {
     const {containerEl} = this, p = this.plugin;
     containerEl.empty();
-    containerEl.classList.add('flash-memo-settings');
+    containerEl.classList.add('glimmer-memo-settings');
     const section = (name: string) => {
       new Setting(containerEl).setName(name).setHeading();
-      return containerEl.createDiv({cls: 'flash-memo-settings-section'});
+      return containerEl.createDiv({cls: 'glimmer-memo-settings-section'});
     };
     const windowSection = section(p.t('窗口行为', 'Window behavior'));
     const trayStatus = p.tray.status();
@@ -1013,13 +1013,13 @@ class MemoSettingTab extends PluginSettingTab {
       .addToggle(toggle => toggle.setValue(p.tray.enabled()).setDisabled(trayStatus !== 'ready').onChange(async value => {
         toggle.setDisabled(true);
         try { await p.tray.setEnabled(value); }
-        catch (error) { new Notice(p.t('无法更改关闭到托盘设置，请检查 Tray 是否已启用并可正常使用。', 'Could not update close-to-tray. Check that Tray is enabled and working.')); console.error('Flash Memo Tray', error); }
+        catch (error) { new Notice(p.t('无法更改关闭到托盘设置，请检查 Tray 是否已启用并可正常使用。', 'Could not update close-to-tray. Check that Tray is enabled and working.')); console.error('Glimmer Memo Tray', error); }
         finally { if (containerEl.isConnected) this.display(); }
       }));
     if (trayStatus === 'disabled') traySetting.addButton(button => button.setButtonText(p.t('启用 Tray', 'Enable Tray')).onClick(async () => {
       button.setDisabled(true);
       try { await p.tray.enablePlugin(); }
-      catch (error) { new Notice(p.t('无法启用 Tray，请在第三方插件设置中检查。', 'Could not enable Tray. Check community plugin settings.')); console.error('Flash Memo Tray', error); }
+      catch (error) { new Notice(p.t('无法启用 Tray，请在第三方插件设置中检查。', 'Could not enable Tray. Check community plugin settings.')); console.error('Glimmer Memo Tray', error); }
       finally { if (containerEl.isConnected) this.display(); }
     }));
     new Setting(windowSection)
@@ -1040,7 +1040,7 @@ class MemoSettingTab extends PluginSettingTab {
     const shortcutSetting = new Setting(shortcutSection)
       .setName(p.t('唤起窗口快捷键', 'Window activation shortcut'))
       .setDesc('');
-    shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'flash-memo-shortcut'});
+    shortcutSetting.controlEl.createEl('kbd', {text:p.settings.globalHotkey,cls:'glimmer-memo-shortcut'});
     shortcutSetting.addButton(button=>button.setButtonText(p.t('修改','Change')).onClick(()=>p.recordGlobalHotkey()));
     this.statusEl = shortcutSetting.descEl;
     this.updateStatus();

@@ -1,8 +1,8 @@
-.flash-memo-window .workspace-tabs > .workspace-tab-header-container,
-.flash-memo-window .view-header { display: none; }
-.flash-memo-window .workspace { padding-top: 38px; }
-.flash-memo-window > .titlebar { display: none; }
-.flash-memo-bar {
+.glimmer-memo-window .workspace-tabs > .workspace-tab-header-container,
+.glimmer-memo-window .view-header { display: none; }
+.glimmer-memo-window .workspace { padding-top: 38px; }
+.glimmer-memo-window > .titlebar { display: none; }
+.glimmer-memo-bar {
   position: fixed; top: 0; left: 1px; right: 1px; height: 38px;
   box-sizing: border-box; min-width: 0; overflow: hidden;
   display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr) minmax(120px, 1fr);
@@ -11,94 +11,94 @@
   border-bottom: 1px solid var(--background-modifier-border);
   z-index: 100; -webkit-app-region: drag;
 }
-.flash-memo-title {
+.glimmer-memo-title {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: "Segoe Script", "Bradley Hand", "Apple Chancery", cursive;
   font-size: 18px; font-weight: 600; line-height: 1.4;
 }
-.flash-memo-name-container { min-width: 0; display: flex; justify-content: center; }
-.flash-memo-actions { display: flex; justify-content: flex-end; gap: 6px; }
-body.flash-memo-window .flash-memo-bar.flash-memo-bar,
-body.flash-memo-window .flash-memo-bar .flash-memo-title {
+.glimmer-memo-name-container { min-width: 0; display: flex; justify-content: center; }
+.glimmer-memo-actions { display: flex; justify-content: flex-end; gap: 6px; }
+body.glimmer-memo-window .glimmer-memo-bar.glimmer-memo-bar,
+body.glimmer-memo-window .glimmer-memo-bar .glimmer-memo-title {
   -webkit-app-region: drag;
 }
-.flash-memo-bar button {
+.glimmer-memo-bar button {
   -webkit-app-region: no-drag; width: 28px; height: 28px;
   padding: 5px; border-radius: var(--radius-s);
 }
-.flash-memo-bar button.is-active { color: var(--text-accent); background: var(--background-modifier-hover); }
-.flash-memo-bar .flash-memo-name {
+.glimmer-memo-bar button.is-active { color: var(--text-accent); background: var(--background-modifier-hover); }
+.glimmer-memo-bar .glimmer-memo-name {
   width: auto; max-width: min(100%, 24ch); padding: 0 8px; box-shadow: none;
   background: transparent; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; font-size: var(--font-ui-small);
 }
-.flash-memo-bar .flash-memo-name:hover { background: var(--background-modifier-hover); }
-.flash-memo-bar .flash-memo-name::after { content: ' ▾'; color: var(--text-muted); }
-.flash-memo-bar .flash-memo-name[aria-expanded="true"] {
+.glimmer-memo-bar .glimmer-memo-name:hover { background: var(--background-modifier-hover); }
+.glimmer-memo-bar .glimmer-memo-name::after { content: ' ▾'; color: var(--text-muted); }
+.glimmer-memo-bar .glimmer-memo-name[aria-expanded="true"] {
   background: var(--background-modifier-hover); box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
-.flash-memo-picker {
+.glimmer-memo-picker {
   position: fixed; z-index: var(--layer-menu, 1000); box-sizing: border-box;
   max-height: min(360px, calc(100vh - 52px)); overflow-y: auto;
   padding: 4px; -webkit-app-region: no-drag;
 }
-.flash-memo-picker .flash-memo-picker-item {
+.glimmer-memo-picker .glimmer-memo-picker-item {
   display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
   padding: 7px 8px; text-align: left; box-shadow: none; border: none;
   background: transparent; color: var(--text-normal); -webkit-app-region: no-drag;
 }
-.flash-memo-picker .flash-memo-picker-item:hover,
-.flash-memo-picker .flash-memo-picker-item:focus-visible { background: var(--background-modifier-hover); }
-.flash-memo-picker .flash-memo-picker-item + .flash-memo-picker-item { margin-top: 3px; }
-.flash-memo-picker .flash-memo-picker-item[aria-selected="true"] { box-shadow: inset 0 0 0 1px var(--interactive-accent); }
-.flash-memo-picker-icon { display: flex; flex-shrink: 0; color: var(--text-muted); }
-.flash-memo-picker-icon svg { width: 13px; height: 13px; }
-.flash-memo-picker-check { width: 14px; flex-shrink: 0; color: var(--text-accent); }
-.flash-memo-picker-label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
-.flash-memo-picker-name { flex: 0 1 auto; min-width: 0; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flash-memo-picker-modified { flex-shrink: 0; white-space: nowrap; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
-.flash-memo-bar .flash-memo-name-input {
+.glimmer-memo-picker .glimmer-memo-picker-item:hover,
+.glimmer-memo-picker .glimmer-memo-picker-item:focus-visible { background: var(--background-modifier-hover); }
+.glimmer-memo-picker .glimmer-memo-picker-item + .glimmer-memo-picker-item { margin-top: 3px; }
+.glimmer-memo-picker .glimmer-memo-picker-item[aria-selected="true"] { box-shadow: inset 0 0 0 1px var(--interactive-accent); }
+.glimmer-memo-picker-icon { display: flex; flex-shrink: 0; color: var(--text-muted); }
+.glimmer-memo-picker-icon svg { width: 13px; height: 13px; }
+.glimmer-memo-picker-check { width: 14px; flex-shrink: 0; color: var(--text-accent); }
+.glimmer-memo-picker-label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.glimmer-memo-picker-name { flex: 0 1 auto; min-width: 0; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glimmer-memo-picker-modified { flex-shrink: 0; white-space: nowrap; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.glimmer-memo-bar .glimmer-memo-name-input {
   -webkit-app-region: no-drag; width: 100%; min-width: 0; height: 28px;
   text-align: center; font-size: var(--font-ui-small);
 }
-.flash-memo-name-container [hidden] { display: none; }
-.flash-memo-window .excalidraw .tray-misc-tools-container { right: 6px; }
-.flash-memo-key-preview { display: block; padding: 16px; margin: 12px 0; text-align: center; font-size: var(--font-ui-medium); }
-.flash-memo-shortcut { white-space: nowrap; }
-.modal.flash-memo-new {
+.glimmer-memo-name-container [hidden] { display: none; }
+.glimmer-memo-window .excalidraw .tray-misc-tools-container { right: 6px; }
+.glimmer-memo-key-preview { display: block; padding: 16px; margin: 12px 0; text-align: center; font-size: var(--font-ui-medium); }
+.glimmer-memo-shortcut { white-space: nowrap; }
+.modal.glimmer-memo-new {
   width: 300px; max-width: calc(100vw - 32px); padding: 24px;
 }
-.flash-memo-new .modal-title {
+.glimmer-memo-new .modal-title {
   margin-bottom: 20px; font-size: var(--font-ui-medium); font-weight: var(--font-semibold);
 }
-.flash-memo-new .modal-content { margin: 0; }
-.flash-memo-new-actions { display: flex; flex-direction: column; gap: 10px; }
-.flash-memo-new button.flash-memo-new-choice {
+.glimmer-memo-new .modal-content { margin: 0; }
+.glimmer-memo-new-actions { display: flex; flex-direction: column; gap: 10px; }
+.glimmer-memo-new button.glimmer-memo-new-choice {
   display: flex; align-items: center; gap: 12px; width: 100%; height: 42px;
   padding: 0 16px; border: 1px solid var(--background-modifier-border);
   border-radius: 999px; background: transparent; box-shadow: none;
   color: var(--text-normal); font-size: var(--font-ui-small); text-align: left;
   cursor: pointer;
 }
-.flash-memo-new button.flash-memo-new-choice:hover { background: var(--background-modifier-hover); }
-.flash-memo-new button.flash-memo-new-choice:focus-visible {
+.glimmer-memo-new button.glimmer-memo-new-choice:hover { background: var(--background-modifier-hover); }
+.glimmer-memo-new button.glimmer-memo-new-choice:focus-visible {
   outline: 2px solid var(--interactive-accent); outline-offset: 3px;
 }
-.flash-memo-new-icon { display: flex; flex-shrink: 0; color: var(--text-muted); }
-.flash-memo-new-icon svg { width: 18px; height: 18px; }
-.flash-memo-error { max-width: 420px; }
-.flash-memo-error-details { max-height: 150px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
-.flash-memo-settings .flash-memo-settings-section {
+.glimmer-memo-new-icon { display: flex; flex-shrink: 0; color: var(--text-muted); }
+.glimmer-memo-new-icon svg { width: 18px; height: 18px; }
+.glimmer-memo-error { max-width: 420px; }
+.glimmer-memo-error-details { max-height: 150px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.glimmer-memo-settings .glimmer-memo-settings-section {
   padding: 0 20px; margin-bottom: 24px;
   border-radius: var(--radius-l); background: var(--background-secondary);
 }
-.flash-memo-settings .flash-memo-settings-section > .setting-item {
+.glimmer-memo-settings .glimmer-memo-settings-section > .setting-item {
   margin: 0; padding: 18px 0; border: 0; border-radius: 0;
   background: transparent; box-shadow: none;
 }
-.flash-memo-settings .flash-memo-settings-section > .setting-item + .setting-item {
+.glimmer-memo-settings .glimmer-memo-settings-section > .setting-item + .setting-item {
   border-top: 1px solid var(--background-modifier-border);
 }
-.flash-memo-settings > .setting-item-heading {
+.glimmer-memo-settings > .setting-item-heading {
   margin: 0 0 10px; padding: 0; border: 0; background: transparent;
 }
