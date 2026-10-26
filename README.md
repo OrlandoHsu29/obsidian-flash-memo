@@ -4,7 +4,7 @@
 
 <h1 align="center">Flash Memo</h1>
 
-<p align="center">A floating Excalidraw scratchpad for Obsidian. Capture a thought, then get back to work.</p>
+<p align="center">Floating text notes and Excalidraw sketches for Obsidian. Capture a thought, then get back to work.</p>
 
 <p align="center">English · <a href="README.zh-CN.md">简体中文</a></p>
 
@@ -12,14 +12,14 @@
 
 *Author-supplied screenshot, with the background dimmed to highlight Flash Memo's compact floating canvas above the project page.*
 
-Open a canvas with one shortcut, sketch or write, and click elsewhere to save and hide it. The next time you open Flash Memo, your drawing is still there. Drawings stay as ordinary Excalidraw files in your vault, ready to open or embed in your notes.
+Open Flash Memo with one shortcut, type a note or sketch, and click elsewhere to save and hide it. The next time you open Flash Memo, your current file is still there. Text notes use Obsidian's native Markdown editor; drawings use Excalidraw. Both stay as ordinary files in your vault.
 
 ## Highlights
 
 - **One shortcut, one familiar canvas.** Show or hide the same scratchpad; optionally use a system-wide shortcut on Windows x64.
 - **Out of the way when you need it.** Save and hide on focus loss with a short fade-out and no added blur delay, or pin the canvas above other windows.
-- **Files within reach.** Click the title to switch drawings; double-click to rename.
-- **A fresh page without losing the last one.** Save the current drawing and create a new canvas, keeping the old filename and location.
+- **Files within reach.** Click the title to switch notes and drawings, distinguished by small icons; double-click to rename.
+- **A fresh page without losing the last one.** Choose a text note or canvas when creating a new memo. The current file is saved and keeps its filename and location.
 - **Your vault, your files.** Choose a drawing folder, embed drawings with `![[...]]`, and keep them when you disable the plugin.
 - **Optional background access.** Integrate with Tray to keep Obsidian running when its main window closes.
 
@@ -33,9 +33,9 @@ Flash Memo requires **Obsidian desktop 1.10.0 or later** and the [Excalidraw com
 2. Download `flash-memo-<version>.zip` from [GitHub Releases](https://github.com/OrlandoHsu29/obsidian-flash-memo/releases), or [build it from source](#build-from-source).
 3. Extract its top-level `flash-memo/` folder into `<vault>/.obsidian/plugins/`. Keep the complete folder, including `manifest.json`, `main.js`, `styles.css`, `LICENSE`, and the Windows hotkey helper.
 4. Reload Obsidian and enable **Flash Memo** under Community plugins.
-5. Press **Ctrl + Alt + Y**, click the ribbon button, or run **Flash Memo: Show/hide quick canvas** from the command palette.
+5. Press **Ctrl + Alt + Y**, click the ribbon button, or run **Flash Memo: Show/hide quick memo** from the command palette.
 
-On first use, Flash Memo creates `Flash Memo/Quick sketch 1.excalidraw.md`. It then reopens the current drawing. New drawings use the next available number on name collisions; existing names are preserved.
+On first use, Flash Memo creates `Flash Memo/Quick sketch 1.excalidraw.md`. It then reopens the current note or drawing. New files use the next available number on name collisions; existing names are preserved. Excalidraw is needed for drawings; existing text notes work without it.
 
 When updating, disable the global shortcut and then the plugin before replacing runtime files. Preserve your `data.json` and its `data.json.bak` backup, then enable the plugin again.
 
@@ -57,39 +57,39 @@ Turn off **Hide on focus loss** if you prefer the canvas to stay visible. Drawin
 
 Flash Memo's own popout is excluded from saved workspace layouts, so starting Obsidian does not recreate it, including when pinned. During normal exit, Flash Memo also requests a final drawing save; use the shortcut to reopen it next time.
 
-Excalidraw handles drawing and autosave. Flash Memo also requests a save before hiding or switching drawings. It keeps the main renderer awake while the canvas is visible and during saving, including when the main window is minimized, then restores its previous background throttling setting.
+Excalidraw handles drawing and autosave; Obsidian handles Markdown editing. Flash Memo requests the appropriate editor's save before hiding, switching, renaming or creating files. It keeps the main renderer awake while the memo is visible and during saving, including when the main window is minimized, then restores its previous background throttling setting.
 
 Saving and the short fade-out start together, so the canvas responds without waiting for disk saving. The window is hidden only after both complete; a save failure restores the visible canvas and shows an error.
 
-### Switch drawings and rename
+### Switch notes and drawings, and rename
 
-Single-click the filename in the title bar to browse drawings in the configured folder and its subfolders, including previous drawings. Each row shows the file's last modified time on the right. Selecting one saves the current canvas before switching.
+Single-click the filename in the title bar to browse notes and drawings in the configured folder and its subfolders. Small drawing and document icons distinguish canvases from text notes. Long titles are shortened with an ellipsis to keep the list compact; hover a row to read its full name. Each row shows the file's last modified time on the right. Selecting one saves the current file before switching.
 
 ![Title bar dropdown listing available drawings](docs/images/canvas-picker.png)
 
-Double-click the filename to rename it in place. Press **Enter** to save or **Esc** to cancel; the `.excalidraw.md` extension is preserved.
+Double-click the filename to rename it in place. Press **Enter** to save or **Esc** to cancel; the original extension is preserved.
 
 ![Inline filename editing in the title bar](docs/images/rename.png)
 
-### Create a new canvas
+### Create a note or canvas
 
-Click the new canvas button and confirm. Flash Memo saves the current drawing, then opens a new blank drawing in the same window. Every existing drawing keeps its filename and location, including default `Quick sketch` names.
+Click the new file button, then select **New note** or **New sketch** in the compact chooser. Flash Memo saves the current file, then opens a new blank memo in the same window. Every existing file keeps its filename and location.
 
 ![Confirmation before creating a new canvas](docs/images/new-canvas.png)
 
-New canvases use the first available numbered name, such as `Quick sketch 2.excalidraw.md`, in the configured creation folder. No existing files are renamed or moved. If saving fails, a new canvas is not created; a creation failure leaves the original drawing intact.
+Text notes use `Quick note 1.md`; canvases use `Quick sketch 1.excalidraw.md` (or `.excalidraw` in compatibility mode). Both use the first available number in the configured creation folder. No existing files are renamed or moved. If saving fails, no new file is created; a creation failure leaves the original intact.
 
 ### Settings
 
-Settings are grouped into **Window behavior**, **Keyboard shortcut**, and **Drawing files**, with related controls sharing a card.
+Settings are grouped into **Window behavior**, **Keyboard shortcut**, and **Memo files**, with related controls sharing a card.
 
 ![Grouped window behavior and keyboard shortcut settings](docs/images/settings.png)
 
 - **Window behavior:** close to system tray through Tray, and hide on focus loss.
 - **Keyboard shortcut:** enable global scope and change the window activation shortcut.
-- **Drawing files:** set the creation folder relative to the vault root and see the current drawing's path. New drawings are stored in this folder; existing drawings retain their filenames and locations.
+- **Memo files:** set the creation folder relative to the vault root and see the current file's path. New notes and drawings are stored in this folder; existing files retain their filenames and locations.
 
-Screenshots show the Simplified Chinese interface and temporary demo drawings. The pictured **Ctrl + Shift + Y** is a customized shortcut; the default is **Ctrl + Alt + Y**. The interface follows Obsidian's language, with Chinese and English translations.
+Screenshots show the earlier canvas interface and temporary demo drawings. The pictured **Ctrl + Shift + Y** is a customized shortcut; the default is **Ctrl + Alt + Y**. The interface follows Obsidian's language, with Chinese and English translations.
 
 ## Keyboard shortcut
 
