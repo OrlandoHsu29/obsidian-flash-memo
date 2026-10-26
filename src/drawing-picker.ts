@@ -1,5 +1,7 @@
 import type { TFile } from 'obsidian';
+import { setIcon } from 'obsidian';
 import { drawingName } from './drawing-name';
+import { memoType } from './memo-file';
 
 export class DrawingPicker {
   private list: HTMLDivElement | null = null;
@@ -26,15 +28,24 @@ export class DrawingPicker {
     list.className = 'suggestion-container flash-memo-picker';
     list.id = 'flash-memo-drawing-picker';
     list.setAttribute('role', 'listbox');
-    list.setAttribute('aria-label', this.t('选择画板', 'Choose canvas'));
+    list.setAttribute('aria-label', this.t('选择速记', 'Choose memo'));
     const files = this.files();
     for (const file of files) {
       const item = list.createEl('button', {cls: 'suggestion-item flash-memo-picker-item'});
+      const type = memoType(file.path);
+      item.classList.add(`flash-memo-picker-${type}`);
+      item.setAttribute('aria-label', `${this.t(type === 'sketch' ? '画板' : '笔记', type === 'sketch' ? 'Canvas' : 'Note')}: ${drawingName(file.path).name}`);
       item.type = 'button'; item.setAttribute('role', 'option');
       const selected = file.path === this.current();
       item.setAttribute('aria-selected', String(selected));
-      item.createSpan({text: selected ? '✓' : '', cls: 'flash-memo-picker-check'});
-      item.createSpan({text: drawingName(file.path).name, cls: 'flash-memo-picker-name'});
+      const icon = item.createSpan({cls: 'flash-memo-picker-icon'});
+      setIcon(icon, type === 'sketch' ? 'pencil-ruler' : 'file-pen-line');
+      icon.setAttribute('aria-hidden', 'true');
+      const label = item.createSpan({cls: 'flash-memo-picker-label'});
+      label.createSpan({text: drawingName(file.path).name, cls: 'flash-memo-picker-name'});
+      if (selected) label.createSpan({text: '✓', cls: 'flash-memo-picker-check'}).setAttribute('aria-hidden', 'true');
+      item.setAttribute('data-tooltip-position', 'top');
+      item.setAttribute('aria-description', file.path);
       const modified = new Date(file.stat.mtime), pad = (value: number) => String(value).padStart(2, '0');
       const timestamp = Number.isFinite(modified.getTime())
         ? `${modified.getFullYear()}-${pad(modified.getMonth() + 1)}-${pad(modified.getDate())} ${pad(modified.getHours())}:${pad(modified.getMinutes())}` : '—';
@@ -43,9 +54,9 @@ export class DrawingPicker {
       time.setAttribute('aria-label', this.t(`最后修改：${timestamp}`, `Last modified: ${timestamp}`));
       item.addEventListener('click', () => { this.hide(); this.select(file); });
     }
-    if (!files.length) list.createDiv({cls: 'suggestion-empty', text: this.t('此目录暂无画板', 'No canvases in this folder')});
+    if (!files.length) list.createDiv({cls: 'suggestion-empty', text: this.t('此目录暂无速记', 'No memos in this folder')});
     const bounds = this.anchor.getBoundingClientRect();
-    const width = Math.min(Math.max(bounds.width, 380), this.doc.documentElement.clientWidth - 16);
+    const width = Math.max(0, Math.min(340, this.doc.documentElement.clientWidth - 16));
     list.style.width = `${width}px`;
     list.style.left = `${Math.max(8, Math.min(bounds.left + (bounds.width - width) / 2, this.doc.documentElement.clientWidth - width - 8))}px`;
     list.style.top = `${bounds.bottom + 4}px`;
