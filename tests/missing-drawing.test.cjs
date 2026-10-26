@@ -492,6 +492,15 @@ test('existing drawings still require Excalidraw and keep their file when it is 
  assert.equal(f.counts().creates,0);assert.equal(f.counts().opens,0);assert.equal(f.p.opening,false);
 });
 
+test('switching from a note to a drawing without Excalidraw keeps the current note open',async()=>{
+ const f=fixture(),note=useNote(f);f.p.hidden=false;let reports=0;
+ f.p.drawingPlugin=()=>{throw Error('Excalidraw is disabled');};f.p.report=()=>{reports++;};
+ f.leaf.setViewState=async()=>assert.fail('Must not open an unsupported drawing view');
+ await f.p.switchDrawing(f.old);
+ assert.equal(reports,1);assert.equal(f.p.settings.file,note.path);assert.equal(f.leaf.view.file,note);
+ assert.equal(f.p.switching,false);assert.equal(f.p.hidden,false);
+});
+
 test('a missing text note recovers as a note without changing or overwriting the old path',async()=>{
  const f=fixture(),note=useNote(f);f.disk.delete(note.path);f.files.delete(note.path);
  f.p.drawingPlugin=()=>assert.fail('Must not require Excalidraw for Markdown');

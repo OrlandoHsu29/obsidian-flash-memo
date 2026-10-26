@@ -770,6 +770,7 @@ export default class FlashMemo extends Plugin {
     this.keepRendererAwake();
     let changingView = false;
     try {
+      if (memoType(file.path) === 'sketch') this.drawingPlugin();
       if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选文件已不存在，请重新选择。', 'The selected file no longer exists. Choose another file.'));
       if (await this.app.vault.adapter.exists(previous)) {
         await this.saveMemo(view);
