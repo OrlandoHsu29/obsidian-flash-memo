@@ -515,7 +515,7 @@ export default class GlimmerMemo extends Plugin {
     this.updateName();
     const actions = bar.createDiv({cls: 'glimmer-memo-actions'});
     this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon glimmer-memo-new-canvas'});
-    setIcon(this.newCanvasButton, 'file-plus');
+    setIcon(this.newCanvasButton, 'plus');
     const newCanvasLabel = this.t('新建笔记或画板', 'Create a note or canvas');
     this.newCanvasButton.setAttribute('aria-label',newCanvasLabel);
     const onNewCanvas = () => this.runWindowAction(() => this.confirmNewCanvas());
