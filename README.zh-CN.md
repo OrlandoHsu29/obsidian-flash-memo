@@ -8,9 +8,11 @@
 
 <p align="center"><a href="README.md">English</a> · 简体中文</p>
 
-按一下快捷键打开速记，输入文本或绘图，点击其他位置即可保存并隐藏。下次唤起，继续使用当前文件。文本笔记使用 Obsidian 原生 Markdown 编辑器，画板使用 Excalidraw，两者都是笔记库里的普通文件。
+按一下快捷键打开速记，输入文本或绘图，点击其他位置即可保存并隐藏。下次唤起，继续使用当前文件。文本笔记使用 Obsidian 原生 Markdown 编辑器，画板功能则基于  [Excalidraw 插件](https://github.com/zsviczian/obsidian-excalidraw-plugin) 实现。（笔记浮窗预览截图是 Glimmer Memo 与 [Blo Editor 插件](https://github.com/OrlandoHsu29/obsidian-blo-editor) 配合使用的效果）
 
-![Glimmer Memo 浮窗中的 Markdown 速记笔记](docs/images/overview.png)
+![Glimmer Memo 浮窗中的 Markdown 速记笔记](docs/images/Preview-Note.png)
+
+![Glimmer Memo 浮窗中的 Excalidraw 画板](docs/images/Preview-sketch.png)
 
 ## 功能亮点
 
@@ -23,7 +25,7 @@
 
 ## 环境要求与安装
 
-需要 **Obsidian 桌面版 1.10.0 或更高版本**，并先安装、启用 [Excalidraw 第三方插件](https://github.com/zsviczian/obsidian-excalidraw-plugin)。Glimmer Memo 独立于 Blo Editor，不支持移动端；系统全局快捷键目前仅支持 **Windows x64**。
+需要 **Obsidian 桌面版 1.10.0 或更高版本**，并先安装、启用 [Excalidraw 第三方插件](https://github.com/zsviczian/obsidian-excalidraw-plugin)。不支持移动端；系统全局快捷键目前仅支持 **Windows x64**。如果希望获得更好的编辑体验，或使用块编辑器写笔记，可以下载并启用 [Blo Editor](https://github.com/OrlandoHsu29/obsidian-blo-editor)。
 
 ### 手动安装
 

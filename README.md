@@ -10,7 +10,11 @@
 
 Open Glimmer Memo with one shortcut, type a note or sketch, and click elsewhere to save and hide it. The next time you open Glimmer Memo, your current file is still there. Text notes use Obsidian's native Markdown editor; drawings use Excalidraw. Both stay as ordinary files in your vault.
 
-![Glimmer Memo floating window showing a Markdown quick note](docs/images/overview.png)
+![Glimmer Memo floating window showing a Markdown quick note](docs/images/Preview-Note.png)
+
+The note preview above uses [Blo Editor](https://github.com/OrlandoHsu29/obsidian-blo-editor) together with Glimmer Memo.
+
+![Glimmer Memo floating window showing an Excalidraw sketch](docs/images/Preview-sketch.png)
 
 ## Highlights
 
@@ -23,7 +27,7 @@ Open Glimmer Memo with one shortcut, type a note or sketch, and click elsewhere 
 
 ## Requirements and installation
 
-Glimmer Memo requires **Obsidian desktop 1.10.0 or later** and the [Excalidraw community plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin), installed and enabled. It is independent of Blo Editor. Mobile is not supported; the system-wide shortcut is currently limited to **Windows x64**.
+Glimmer Memo requires **Obsidian desktop 1.10.0 or later** and the [Excalidraw community plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin), installed and enabled. Mobile is not supported; the system-wide shortcut is currently limited to **Windows x64**. For a richer editing experience or block-based note editing, download and enable [Blo Editor](https://github.com/OrlandoHsu29/obsidian-blo-editor).
 
 ### Manual installation
 
