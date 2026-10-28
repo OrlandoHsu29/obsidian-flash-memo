@@ -30,6 +30,52 @@ function fixture(){
  return {p,old,files,disk,leaf,counts:()=>({creates,shows,hides,opens})};
 }
 
+test('opening a file from the main window saves its editor before switching the memo',async()=>{
+ const f=fixture(), order=[], target={path:'Other/note.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);f.p.hidden=true;
+ const source={file:target,save:async()=>order.push('save source')};
+ f.p.app.workspace.iterateAllLeaves=callback=>callback({view:source});
+ f.p.switchDrawing=async file=>{assert.equal(file,target);order.push('switch');};
+ await f.p.openFileFromMain(target);
+ assert.deepEqual(order,['save source','switch']);assert.equal(f.p.hidden,false);
+});
+test('a source save failure prevents opening a file from the main window',async()=>{
+ const f=fixture(),target={path:'Other/note.md'};
+ f.files.set(target.path,target);f.disk.add(target.path);
+ f.p.app.workspace.iterateAllLeaves=callback=>callback({view:{file:target,save:async()=>{throw Error('save failed');}}});
+ f.p.switchDrawing=async()=>{throw Error('must not switch');};
+ await assert.rejects(f.p.openFileFromMain(target),/save failed/);
+ assert.equal(f.p.settings.file,f.old.path);
+});
+
+test('opening in the main window hides the memo first and opens its current file in a new tab',async()=>{
+ const f=fixture(), order=[];f.p.hidden=false;
+ f.p.hide=async()=>{order.push('hide');f.p.hidden=true;};
+ const root={}, recent={}, target={getRoot:()=>root,async setViewState(state){order.push('open');assert.equal(state.state.file,f.old.path);},detach(){}};
+ f.p.app.workspace.rootSplit=root;
+ f.p.app.workspace.getMostRecentLeaf=value=>{assert.equal(value,root);return recent;};
+ f.p.app.workspace.setActiveLeaf=leaf=>{order.push(leaf===recent?'activate main':'activate target');};
+ f.p.app.workspace.getLeaf=kind=>{assert.equal(kind,'tab');return target;};
+ f.p.app.workspace.revealLeaf=async leaf=>{assert.equal(leaf,target);order.push('reveal');};
+ const previous=global.window;global.window={electronWindow:{isMinimized:()=>true,restore(){order.push('restore');},show(){order.push('show');},focus(){order.push('focus');}}};
+ try {await f.p.openInMainWindow();} finally {global.window=previous;}
+ assert.deepEqual(order,['hide','restore','show','focus','activate main','open','reveal','activate target']);assert.equal(f.p.opening,false);
+});
+test('opening in the main window stops when the memo could not be hidden',async()=>{
+ const f=fixture();f.p.hidden=false;f.p.hide=async()=>{};
+ f.p.app.workspace.getLeaf=()=>{throw Error('must not open');};
+ await f.p.openInMainWindow();assert.equal(f.p.hidden,false);assert.equal(f.p.opening,false);
+});
+test('failed main window opening restores the memo window',async()=>{
+ const f=fixture();f.p.hidden=false;let detached=false;
+ f.p.hide=async()=>{f.p.hidden=true;};
+ const root={};f.p.app.workspace.rootSplit=root;f.p.app.workspace.getMostRecentLeaf=()=>null;
+ f.p.app.workspace.getLeaf=()=>({getRoot:()=>root,async setViewState(){throw Error('open failed');},detach(){detached=true;}});
+ const previous=global.window;global.window={};
+ try {await assert.rejects(f.p.openInMainWindow(),/open failed/);} finally {global.window=previous;}
+ assert.equal(detached,true);assert.equal(f.p.hidden,false);
+});
+
 test('deleted drawing is recreated and replaces the empty view in the surviving popout',async()=>{
  const f=fixture();f.disk.delete(f.old.path);f.files.delete(f.old.path);f.leaf.view={};
  await f.p.toggle();
@@ -375,8 +421,17 @@ test('new canvas saves the old drawing before creating, persisting and switching
  const setState=f.leaf.setViewState.bind(f.leaf);f.leaf.setViewState=async state=>{order.push('switch');await setState(state);};
  f.p.saveData=async()=>order.push('persist');
  await f.p.createNewCanvas();
- assert.deepEqual(order,['save','create','persist','switch']);assert.equal(f.p.settings.file,'Glimmer Memo/Quick sketch 1.excalidraw.md');
+ assert.deepEqual(order,['save','create','persist','switch','persist']);assert.equal(f.p.settings.file,'Glimmer Memo/Quick sketch 1.excalidraw.md');
  assert.equal(f.old.path,'Glimmer Memo/Original.excalidraw.md');assert.ok(f.files.has(f.old.path));assert.equal(f.p.newCanvasButton.disabled,false);
+});
+test('history keeps the most recent 20 distinct files',()=>{
+ const f=fixture();f.p.settings.history=[];
+ for(let i=0;i<21;i++) f.p.rememberFile(`note ${i}.md`);
+ f.p.rememberFile('note 5.md');
+ assert.equal(f.p.settings.history.length,20);
+ assert.equal(f.p.settings.history[0],'note 5.md');
+ assert.equal(f.p.settings.history.filter(path=>path==='note 5.md').length,1);
+ assert.ok(!f.p.settings.history.includes('note 0.md'));
 });
 test('a failed source save prevents new canvas creation and keeps the original selected',async()=>{
  const f=fixture();f.p.hidden=false;f.p.settings.pinned=true;f.p.newCanvasButton={disabled:false};let reports=0;

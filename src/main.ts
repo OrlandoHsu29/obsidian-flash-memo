@@ -1,6 +1,6 @@
 import {
-  App, FileSystemAdapter, Notice, Plugin, PluginSettingTab, Setting, TFile,
-  WorkspaceLeaf, WorkspaceWindow, setIcon, KeymapEventHandler,
+  App, FileSystemAdapter, FileView, Notice, Plugin, PluginSettingTab, Setting, TFile,
+  WorkspaceLeaf, WorkspaceWindow, setIcon, addIcon, KeymapEventHandler,
 } from 'obsidian';
 // Desktop timers keep initialization and cleanup responsive when the main
 // renderer is background-throttled.
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { GlobalHotkey, HotkeyStatus, localHotkey } from './global-hotkey';
 import { HotkeyRecorder } from './hotkey-recorder';
 import { NewCanvasConfirm } from './new-canvas-confirm';
-import { createDrawing, createNote, availableDrawingPath, drawingFiles, drawingFolder, ensureDrawingFolder } from './drawing-files';
+import { createDrawing, createNote, availableDrawingPath, drawingFolder, ensureDrawingFolder } from './drawing-files';
 import { memoType, memoViewState, MemoType } from './memo-file';
 import { drawingName, renamedDrawingPath } from './drawing-name';
 import { DrawingPicker } from './drawing-picker';
@@ -44,6 +44,8 @@ interface DesktopWindow {
   setOpacity?(opacity: number): void;
   focus(): void;
   isFocused(): boolean;
+  isMinimized?(): boolean;
+  restore?(): void;
   setAlwaysOnTop(value: boolean): void;
   getBounds(): Bounds;
   setBounds(value: Bounds): void;
@@ -68,6 +70,7 @@ interface DrawingPlugin {
 interface MemoSettings {
   folder: string;
   file: string;
+  history: string[];
   leafId: string;
   pinned: boolean;
   hideOnBlur: boolean;
@@ -75,7 +78,7 @@ interface MemoSettings {
   globalHotkeyEnabled: boolean;
   globalHotkey: string;
 }
-const DEFAULTS: MemoSettings = { folder: 'Glimmer Memo', file: '', leafId: '', pinned: false, hideOnBlur: true, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
+const DEFAULTS: MemoSettings = { folder: 'Glimmer Memo', file: '', history: [], leafId: '', pinned: false, hideOnBlur: true, bounds: null, globalHotkeyEnabled: process.platform === 'win32' && process.arch === 'x64', globalHotkey: 'Ctrl+Alt+Y' };
 
 export default class GlimmerMemo extends Plugin {
   settings: MemoSettings = { ...DEFAULTS };
@@ -112,6 +115,7 @@ export default class GlimmerMemo extends Plugin {
   private cancelNameEdit: (() => void) | null = null;
   private drawingPicker: DrawingPicker | null = null;
   private switching = false;
+  private mainActions = new Map<FileView, HTMLElement>();
   private errorDialog: CanvasError | null = null;
   private errorClosing = false;
   readonly tray = new TrayIntegration(() => (this.app as App & {plugins: TrayPluginManager}).plugins, () => {
@@ -142,7 +146,10 @@ export default class GlimmerMemo extends Plugin {
   }
 
   async onload() {
+    addIcon('glimmer-memo-note', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h10v6h6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="currentColor" fill-opacity="0.28" stroke="none"/><path d="M5 3h10l6 6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M15 3v6h6"/></svg>');
     this.settings = { ...DEFAULTS, ...await this.loadData() };
+    this.settings.history = Array.isArray(this.settings.history) ? [...new Set(this.settings.history.filter((path): path is string => typeof path === 'string' && !!path))].slice(0, 20) : [];
+    if (this.settings.file && !this.settings.history.includes(this.settings.file)) this.rememberFile(this.settings.file);
     this.filterSavedLayout();
     this.addCommand({
       id: 'toggle', name: this.t('显示/隐藏速记窗口', 'Show/hide quick memo'),
@@ -165,13 +172,31 @@ export default class GlimmerMemo extends Plugin {
     });
     this.settingTab = new MemoSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
-    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-      if (oldPath !== this.settings.file) return;
-      this.settings.file = file.path;
-      this.updateName();
-      if (!this.creatingCanvas) void this.saveData(this.settings).catch(error => this.report(error, true));
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+      if (!(file instanceof TFile) || !this.supportsMemoFile(file)) return;
+      menu.addItem(item => item.setTitle(this.t('用 Glimmer Memo 打开', 'Open with Glimmer Memo'))
+        .setIcon('glimmer-memo-note').onClick(() => this.runWindowAction(() => this.openFileFromMain(file))));
     }));
-    this.registerEvent(this.app.vault.on('delete', file => this.onDrawingDeleted(file.path)));
+    this.registerEvent(this.app.workspace.on('layout-change', () => this.updateMainActions()));
+    this.registerEvent(this.app.workspace.on('file-open', () => this.updateMainActions()));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      const move = (path: string) => path === oldPath ? file.path : path.startsWith(oldPath + '/') ? file.path + path.slice(oldPath.length) : path;
+      const history = this.settings.history.map(move);
+      const current = move(this.settings.file);
+      const changed = current !== this.settings.file || history.some((path, index) => path !== this.settings.history[index]);
+      this.settings.history = [...new Set(history)];
+      this.settings.file = current;
+      if (changed) this.updateName();
+      if (changed && !this.creatingCanvas) void this.saveData(this.settings).catch(error => this.report(error, true));
+    }));
+    this.registerEvent(this.app.vault.on('delete', file => {
+      const history = this.settings.history.filter(path => path !== file.path && !path.startsWith(file.path + '/'));
+      if (history.length !== this.settings.history.length) {
+        this.settings.history = history;
+        void this.saveData(this.settings).catch(error => this.report(error, true));
+      }
+      this.onDrawingDeleted(file.path);
+    }));
     this.registerEvent(this.app.workspace.on('window-close', win => {
       if (win !== this.popout) return;
       this.reset();
@@ -183,6 +208,7 @@ export default class GlimmerMemo extends Plugin {
     }));
     this.app.workspace.onLayoutReady(() => {
       if (this.disposed) return;
+      this.updateMainActions();
       void this.configureGlobalHotkey().then(success => {
         if (!success && this.settings.globalHotkeyEnabled && !this.disposed) new Notice(this.hotkeyDescription());
       }).catch(error => this.report(error));
@@ -399,6 +425,8 @@ export default class GlimmerMemo extends Plugin {
           this.keepRendererAwake();
           await this.leaf!.setViewState(memoViewState(file.path));
           if (this.disposed || !this.alive()) return;
+          this.rememberFile(file.path);
+          await this.saveData(this.settings);
           this.updateName();
           this.show();
         } else if (this.hidden || this.hiding) this.show();
@@ -412,6 +440,7 @@ export default class GlimmerMemo extends Plugin {
       await this.attach(created);
       if (this.disposed) return;
       this.settings.leafId = (created as WorkspaceLeaf & { id: string }).id;
+      this.rememberFile(file.path);
       await this.saveData(this.settings);
       this.show();
     } catch (error) {
@@ -471,12 +500,13 @@ export default class GlimmerMemo extends Plugin {
     nameInput.setAttribute('aria-label', this.t('文件名（不含扩展名）', 'File name (without extension)'));
     const finishEdit = () => { nameInput.hidden = true; if (this.nameButton) this.nameButton.hidden = false; };
     this.cancelNameEdit = finishEdit;
-    this.drawingPicker = new DrawingPicker(this.nameButton, () => {
-      const files = drawingFiles(this.app, this.settings.folder);
-      const current = this.app.vault.getFileByPath(this.settings.file);
-      if (current && !files.includes(current)) files.unshift(current);
-      return files;
-    }, () => this.settings.file, file => this.runWindowAction(() => this.switchDrawing(file)), (zh, en) => this.t(zh, en));
+    this.drawingPicker = new DrawingPicker(this.nameButton, () => this.settings.history
+      .map(path => this.app.vault.getFileByPath(path)).filter((file): file is TFile => !!file),
+      () => this.settings.file, file => this.runWindowAction(() => this.switchDrawing(file)),
+      file => {
+        const adapter = this.app.vault.adapter;
+        return adapter instanceof FileSystemAdapter ? join(adapter.getBasePath(), file.path) : file.path;
+      }, (zh, en) => this.t(zh, en));
     const onRename = () => this.runWindowAction(() => {
       if (this.errorDialog || this.creatingCanvas || this.renaming || this.switching) return;
       this.drawingPicker?.hide();
@@ -514,6 +544,11 @@ export default class GlimmerMemo extends Plugin {
     nameInput.addEventListener('keydown', onNameKey);
     this.updateName();
     const actions = bar.createDiv({cls: 'glimmer-memo-actions'});
+    const openMainButton = actions.createEl('button', {cls: 'clickable-icon glimmer-memo-open-main'});
+    setIcon(openMainButton, 'external-link');
+    openMainButton.setAttribute('aria-label', this.t('在主窗口打开', 'Open in main window'));
+    const onOpenMain = () => this.runWindowAction(() => this.openInMainWindow());
+    openMainButton.addEventListener('click', onOpenMain);
     this.newCanvasButton = actions.createEl('button', {cls:'clickable-icon glimmer-memo-new-canvas'});
     setIcon(this.newCanvasButton, 'plus');
     const newCanvasLabel = this.t('新建笔记或画板', 'Create a note or canvas');
@@ -588,6 +623,7 @@ export default class GlimmerMemo extends Plugin {
       native!.off('resize', onBounds); native!.off('moved', onBounds);
       doc.removeEventListener('keydown', onKey);
       this.pinButton?.removeEventListener('click', onPin);
+      openMainButton.removeEventListener('click', onOpenMain);
       closeButton.removeEventListener('click', onClose);
       this.drawingPicker?.hide(); this.drawingPicker = null;
       this.nameButton?.removeEventListener('click', onNameClick);
@@ -621,6 +657,37 @@ export default class GlimmerMemo extends Plugin {
 
   private requestHide(reason: 'blur' | 'escape' | 'close') {
     this.runWindowAction(() => this.hide(reason));
+  }
+
+  private async openInMainWindow() {
+    if (!this.alive() || this.hidden || this.opening || this.hiding || this.creatingCanvas || this.renaming || this.switching || this.errorDialog) return;
+    const file = this.app.vault.getFileByPath(this.settings.file);
+    if (!file) throw Error(this.t('当前文件不存在。', 'The current file no longer exists.'));
+    this.opening = true;
+    try {
+      await this.hide('close');
+      if (this.disposed || !this.hidden || !this.alive()) return;
+      if (this.app.vault.getFileByPath(file.path) !== file) throw Error(this.t('当前文件不存在。', 'The current file no longer exists.'));
+      const workspace = this.app.workspace;
+      const main = (window as Window & {electronWindow?: DesktopWindow}).electronWindow;
+      if (main?.isMinimized?.()) main.restore?.();
+      main?.show(); main?.focus();
+      const recent = workspace.getMostRecentLeaf(workspace.rootSplit);
+      if (recent) workspace.setActiveLeaf(recent, {focus: true});
+      const target = workspace.getLeaf('tab');
+      try {
+        if (target.getRoot() !== workspace.rootSplit) throw Error(this.t('无法在主窗口创建标签页。', 'Could not create a tab in the main window.'));
+        await target.setViewState(memoViewState(file.path));
+        await workspace.revealLeaf(target);
+        workspace.setActiveLeaf(target, {focus: true});
+      } catch (error) {
+        target.detach();
+        throw error;
+      }
+    } catch (error) {
+      if (!this.disposed && this.alive() && this.hidden) this.show();
+      throw error;
+    } finally { this.opening = false; }
   }
 
   private async hide(reason: 'blur' | 'escape' | 'close') {
@@ -712,6 +779,7 @@ export default class GlimmerMemo extends Plugin {
   private async createNewCanvas(type: MemoType = 'sketch') {
     if (this.errorDialog || !this.alive() || this.disposed || this.creatingCanvas || this.renaming || this.switching) return;
     const leaf = this.leaf!, view = leaf.view as DrawingView, current = view.file;
+    const previousHistory = this.settings.history.slice();
     if (!current) { this.report(Error(this.t('当前文件暂时无法保存，请稍后重试。','The current file cannot be saved yet. Try again shortly.')), true); return; }
     this.creatingCanvas = true; this.newCanvasButton!.disabled = true;
     this.hideGeneration++; this.hiding = false; this.clearBlur(); this.restoreWindowOpacity(true); this.keepRendererAwake();
@@ -730,6 +798,8 @@ export default class GlimmerMemo extends Plugin {
       await this.saveData(this.settings);
       if (!this.disposed && this.alive() && this.leaf === leaf) {
         await leaf.setViewState(memoViewState(fresh.path));
+        this.rememberFile(fresh.path);
+        await this.saveData(this.settings);
         this.updateName();
         this.show();
       }
@@ -737,6 +807,7 @@ export default class GlimmerMemo extends Plugin {
     } catch(error) {
       // Keep the saved original reachable even when a later step fails.
       this.settings.file = current.path;
+      this.settings.history = previousHistory;
       if (!this.disposed && this.alive() && this.leaf === leaf && leaf.view !== view) {
         try { await leaf.setViewState(memoViewState(current.path)); } catch { /* Keep the saved original file intact. */ }
       }
@@ -755,6 +826,71 @@ export default class GlimmerMemo extends Plugin {
       const name = drawingName(this.settings.file).name || this.t('速记', 'Quick memo');
       this.nameButton.setText(name);
       this.nameButton.setAttribute('aria-label', `${name} — ${this.t('单击切换，双击重命名', 'Click to switch; double-click to rename')}`);
+    }
+  }
+
+  private rememberFile(path: string) {
+    this.settings.history = [path, ...this.settings.history.filter(item => item !== path)].slice(0, 20);
+  }
+
+  private supportsMemoFile(file: TFile) { return /\.(?:md|excalidraw)$/i.test(file.path); }
+
+  private updateMainActions() {
+    if (this.disposed) return;
+    const views = new Set<FileView>();
+    this.app.workspace.iterateAllLeaves(leaf => {
+      if (leaf.getRoot() !== this.app.workspace.rootSplit || !(leaf.view instanceof FileView)) return;
+      const view = leaf.view;
+      if (!view.file || !this.supportsMemoFile(view.file)) return;
+      views.add(view);
+      if (this.mainActions.has(view)) return;
+      const button = view.addAction('glimmer-memo-note', this.t('用 Glimmer Memo 打开', 'Open with Glimmer Memo'), () => {
+        if (view.file && this.supportsMemoFile(view.file)) this.runWindowAction(() => this.openFileFromMain(view.file!));
+      });
+      this.mainActions.set(view, button);
+    });
+    for (const [view, button] of this.mainActions) if (!views.has(view)) { button.remove(); this.mainActions.delete(view); }
+  }
+
+  private async openFileFromMain(file: TFile) {
+    if (this.startupRestore) await this.startupRestore;
+    if (this.disposed || this.quitting || this.opening || this.hiding || this.creatingCanvas || this.renaming || this.switching || this.errorDialog) return;
+    if (this.app.vault.getFileByPath(file.path) !== file || !await this.app.vault.adapter.exists(file.path)) throw Error(this.t('所选文件已不存在，请重新选择。', 'The selected file no longer exists. Choose another file.'));
+    const sourceViews: DrawingView[] = [];
+    this.app.workspace.iterateAllLeaves(leaf => {
+      const view = leaf.view as DrawingView;
+      if (leaf !== this.leaf && view.file === file && (view.save || view.forceSave)) sourceViews.push(view);
+    });
+    for (const view of sourceViews) await this.saveMemo(view);
+    if (this.disposed) return;
+    if (this.alive()) {
+      if (this.hidden) this.show();
+      if (file.path === this.settings.file) { this.show(); return; }
+      await this.switchDrawing(file);
+      return;
+    }
+    this.opening = true;
+    let created: WorkspaceLeaf | null = null;
+    const previous = this.settings.file, previousHistory = this.settings.history.slice();
+    try {
+      if (memoType(file.path) === 'sketch') this.drawingPlugin();
+      this.keepRendererAwake();
+      created = this.app.workspace.getLeaf('window');
+      await created.setViewState(memoViewState(file.path));
+      await this.attach(created);
+      if (this.disposed) return;
+      this.settings.file = file.path;
+      this.settings.leafId = (created as WorkspaceLeaf & {id: string}).id;
+      this.rememberFile(file.path);
+      await this.saveData(this.settings);
+      this.updateName(); this.show();
+    } catch (error) {
+      this.settings.file = previous; this.settings.history = previousHistory;
+      if (created) { this.reset(); created.detach(); }
+      throw error;
+    } finally {
+      this.opening = false;
+      if (!this.alive() || this.hidden) this.restoreThrottling();
     }
   }
 
@@ -781,6 +917,7 @@ export default class GlimmerMemo extends Plugin {
       await leaf.setViewState(memoViewState(file.path));
       if (this.disposed || !this.alive() || this.leaf !== leaf || this.hidden) return;
       this.settings.file = file.path;
+      this.rememberFile(file.path);
       changingView = false;
       this.updateName();
       await this.saveData(this.settings);
@@ -902,6 +1039,7 @@ export default class GlimmerMemo extends Plugin {
     this.wakeContents = null; this.previousThrottling = null;
   }
   private reset() {
+    this.switching = false;
     const errorDialog = this.errorDialog; this.errorDialog = null; errorDialog?.close();
     this.restoreWindowOpacity();
     this.hideGeneration++; this.hiding = false; this.clearBlur();
@@ -965,6 +1103,8 @@ export default class GlimmerMemo extends Plugin {
 
   onunload() {
     this.disposed = true;
+    for (const button of this.mainActions.values()) button.remove();
+    this.mainActions.clear();
     this.clearLocalHotkey();
     this.recorder?.close();
     this.newCanvasDialog?.close();

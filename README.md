@@ -20,7 +20,7 @@ The note preview above uses [Blo Editor](https://github.com/OrlandoHsu29/obsidia
 
 - **One shortcut, one familiar canvas.** Show or hide the same scratchpad; optionally use a system-wide shortcut on Windows x64.
 - **Out of the way when you need it.** Save and hide on focus loss with a short fade-out and no added blur delay, or pin the canvas above other windows.
-- **Files within reach.** Click the title to switch notes and drawings, distinguished by small icons; double-click to rename.
+- **Files within reach.** Click the title to revisit up to 20 recent notes and drawings; double-click to rename. Open a vault file in Glimmer Memo from its main-window title bar or context menu.
 - **A fresh page without losing the last one.** Choose a text note or canvas when creating a new memo. The current file is saved and keeps its filename and location.
 - **Your vault, your files.** Choose a drawing folder, embed drawings with `![[...]]`, and keep them when you disable the plugin.
 - **Optional background access.** Integrate with Tray to keep Obsidian running when its main window closes.
@@ -65,7 +65,9 @@ Saving and the short fade-out start together, so the canvas responds without wai
 
 ### Switch notes and drawings, and rename
 
-Single-click the filename in the title bar to browse notes and drawings in the configured folder and its subfolders. Small drawing and document icons distinguish canvases from text notes. Long titles are shortened with an ellipsis to keep the list compact; hover a row to read its full name. Each row shows the file's last modified time on the right. Selecting one saves the current file before switching.
+Single-click the filename in the title bar to browse up to 20 recently opened notes and drawings, ordered by most recent use. Small drawing and document icons distinguish canvases from text notes. Hover over a row to see its full path; the file's last modified time appears on the right. Selecting one saves the current file before switching.
+
+To open a vault file in Glimmer Memo, use the note's main-window title-bar button or choose **Open with Glimmer Memo** from its file context menu. The floating window's main-window button saves the current file, hides the floating window, and opens the file in a main-window tab.
 
 ![Title bar file list with distinct icons for notes and sketches](docs/images/canvas-picker.png)
 
