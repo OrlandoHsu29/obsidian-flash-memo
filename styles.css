@@ -1,6 +1,9 @@
 .glimmer-memo-window .workspace-tabs > .workspace-tab-header-container,
 .glimmer-memo-window .view-header { display: none; }
 .glimmer-memo-window .workspace { padding-top: 38px; }
+.glimmer-memo-window .workspace-leaf-content .view-content.wysimark-container.blo-memo-panel {
+  padding-top: 0; padding-bottom: 0;
+}
 .glimmer-memo-window > .titlebar { display: none; }
 .glimmer-memo-bar {
   position: fixed; top: 0; left: 1px; right: 1px; height: 38px;
