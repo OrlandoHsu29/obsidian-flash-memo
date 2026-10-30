@@ -30,6 +30,12 @@ function fixture(){
  return {p,old,files,disk,leaf,counts:()=>({creates,shows,hides,opens})};
 }
 
+test('opening the current hidden memo from the main window shows it only once',async()=>{
+ const f=fixture();f.p.app.workspace.iterateAllLeaves=()=>{};
+ await f.p.openFileFromMain(f.old);
+ assert.equal(f.counts().shows,1);
+});
+
 test('opening a file from the main window saves its editor before switching the memo',async()=>{
  const f=fixture(), order=[], target={path:'Other/note.md'};
  f.files.set(target.path,target);f.disk.add(target.path);f.p.hidden=true;
@@ -295,6 +301,26 @@ test('hiding a pinned drawing preserves the permanent pin setting and native lay
  f.leaf.view.forceSave=async()=>{};f.p.windowFade.fadeOut=async()=>true;
  await GlimmerMemo.prototype.hide.call(f.p,'close');
  assert.equal(f.p.hidden,true);assert.equal(f.p.settings.pinned,true);
+});
+
+test('showing a pinned drawing restores topmost when the native show clears it',()=>{
+ const f=fixture(),calls=[];f.p.settings.pinned=true;let top=true;
+ f.p.native.show=()=>{calls.push('show');top=false;};
+ f.p.native.focus=()=>calls.push('focus');
+ f.p.native.isAlwaysOnTop=()=>top;
+ f.p.native.setAlwaysOnTop=value=>{calls.push('topmost');top=value;};
+ GlimmerMemo.prototype.show.call(f.p);
+ assert.deepEqual(calls,['show','topmost','focus']);assert.equal(top,true);
+ f.p.ensurePinnedLayer();assert.deepEqual(calls,['show','topmost','focus']);
+ f.p.settings.pinned=false;top=false;f.p.ensurePinnedLayer();assert.equal(top,false);
+});
+
+test('the higher Windows layer is used only while permanently pinned',()=>{
+ const f=fixture(),layers=[];f.p.hidden=false;
+ f.p.native.setAlwaysOnTop=(value,level)=>layers.push([value,level]);
+ f.p.settings.pinned=true;f.p.setWindowLayer(true);
+ f.p.settings.pinned=false;f.p.setWindowLayer(true);f.p.setWindowLayer(false);
+ assert.deepEqual(layers,[[true,process.platform==='win32'?'pop-up-menu':undefined],[true,undefined],[false,undefined]]);
 });
 
 test('auto-hide is prepared before showing and does not raise the window again during exit',async()=>{

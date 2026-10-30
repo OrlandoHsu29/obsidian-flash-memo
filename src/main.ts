@@ -46,7 +46,8 @@ interface DesktopWindow {
   isFocused(): boolean;
   isMinimized?(): boolean;
   restore?(): void;
-  setAlwaysOnTop(value: boolean): void;
+  setAlwaysOnTop(value: boolean, level?: 'pop-up-menu'): void;
+  isAlwaysOnTop?(): boolean;
   getBounds(): Bounds;
   setBounds(value: Bounds): void;
   on(event: string, listener: () => void): void;
@@ -474,7 +475,7 @@ export default class GlimmerMemo extends Plugin {
     this.keepRendererAwake();
     const doc = container.doc;
     doc.body.classList.add('glimmer-memo-window');
-    native.setAlwaysOnTop(this.settings.pinned);
+    this.setWindowLayer(this.settings.pinned);
     const bounds = plainBounds(this.settings.bounds);
     if (bounds) {
       const screen = container.win.screen;
@@ -568,6 +569,7 @@ export default class GlimmerMemo extends Plugin {
     const onBlur = () => this.runWindowAction(() => {
       this.drawingPicker?.hide();
       this.clearBlur();
+      this.ensurePinnedLayer();
       if (!this.settings.hideOnBlur || this.settings.pinned || this.hidden) {
         if (!this.settings.hideOnBlur) this.restoreHideLayer();
         return;
@@ -584,6 +586,7 @@ export default class GlimmerMemo extends Plugin {
     const onFocus = () => this.runWindowAction(() => {
       this.clearBlur(); this.hideGeneration++; this.hiding = false;
       this.restoreWindowOpacity(true); this.prepareHideLayer();
+      this.ensurePinnedLayer();
     });
     const onNativeShow = () => this.runWindowAction(() => {
       // Tray restores all known windows. A canvas hidden by Glimmer Memo should
@@ -646,7 +649,22 @@ export default class GlimmerMemo extends Plugin {
     this.restoreWindowOpacity(true);
     this.prepareHideLayer();
     this.native!.show();
+    // Showing a popout can reset its native level even when its topmost bit
+    // still reads true. Reapply the pinned level on every explicit open.
+    if (this.settings.pinned) this.setWindowLayer(true);
     this.native!.focus();
+    this.ensurePinnedLayer();
+  }
+
+  private ensurePinnedLayer() {
+    if (this.settings.pinned && !this.hidden && this.alive() && this.native!.isAlwaysOnTop?.() === false) {
+      this.setWindowLayer(true);
+    }
+  }
+
+  private setWindowLayer(topmost: boolean) {
+    const level = topmost && this.settings.pinned && process.platform === 'win32' ? 'pop-up-menu' : undefined;
+    this.native!.setAlwaysOnTop(topmost, level);
   }
 
   private runWindowAction(action: () => void | Promise<void>) {
@@ -864,8 +882,8 @@ export default class GlimmerMemo extends Plugin {
     for (const view of sourceViews) await this.saveMemo(view);
     if (this.disposed) return;
     if (this.alive()) {
-      if (this.hidden) this.show();
-      if (file.path === this.settings.file) { this.show(); return; }
+      if (this.hidden || file.path === this.settings.file) this.show();
+      if (file.path === this.settings.file) return;
       await this.switchDrawing(file);
       return;
     }
@@ -976,7 +994,7 @@ export default class GlimmerMemo extends Plugin {
     this.restoreWindowOpacity(true);
     this.settings.pinned = !this.settings.pinned;
     this.hideLayerHeld = !this.settings.pinned && this.settings.hideOnBlur && !this.hidden;
-    this.native!.setAlwaysOnTop(this.settings.pinned || this.hideLayerHeld);
+    this.setWindowLayer(this.settings.pinned || this.hideLayerHeld);
     this.updatePin();
     void this.saveData(this.settings).catch(error => this.report(error, true));
   }
@@ -1006,13 +1024,13 @@ export default class GlimmerMemo extends Plugin {
   private holdHideLayer() {
     if (this.hideLayerHeld || !this.alive() || this.settings.pinned) return;
     this.hideLayerHeld = true;
-    this.native!.setAlwaysOnTop(true);
+    this.setWindowLayer(true);
   }
 
   private restoreHideLayer() {
     if (!this.hideLayerHeld) return;
     this.hideLayerHeld = false;
-    if (this.alive()) this.native!.setAlwaysOnTop(this.settings.pinned);
+    if (this.alive()) this.setWindowLayer(this.settings.pinned);
   }
 
   private restoreWindowOpacity(keepLayer = false) {
